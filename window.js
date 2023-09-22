@@ -1,4 +1,4 @@
-alert("提示", "进入游戏才能看到悬浮窗！")
+alert("提示", "进入游戏才能看到悬浮窗！");
 const QiuMusic = function () {
     this.circle = require("./Module/module");
     this.DataUrl = this.circle.config.Qiu_url;
