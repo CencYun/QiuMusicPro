@@ -12,11 +12,21 @@ const debugDumpPass = "";
 const autoPlayMergeThreshold = 0.01;
 //用于乐谱导出的合并阈值
 const scoreExportMergeThreshold = 0.2;
+/**
+ * @brief 导出数据的格式类型
+ * @enum {string}
+ */
+const ScoreExportType = {
+    none: "none",
+    keyboardScore: "keyboardScore",
+    keySequenceJSON: "keySequenceJSON",
+};
 const globalConfig = storages.create("hallo1_clxmidiplayer_config");
 const musicInit = storages.create("musicInit");
 var GameProfile = require("./Module/gameProfile.js");
 var gameProfile = new GameProfile();
 var visualizer = new Visualizer();
+var noteUtils = new NoteUtils();
 var Qiu = new QiuMusic();
 
 //防抓包开始
@@ -93,7 +103,6 @@ function readGlobalConfig(key, defaultValue) {
  */
 function setGlobalConfig(key, val) {
     globalConfig.put(key, val);
-    // console.log("设置全局配置成功: " + key + " = " + val);
     return 0;
 }
 
@@ -135,6 +144,27 @@ function readFileConfig(key, musicName, defaultValue) {
 }
 
 /**
+     * 读取指定文件在指定目标(游戏-键位-乐器)的配置项, 如果不存在则返回公共配置, 如果公共配置也不存在则返回默认值
+     * @param {string} key - 配置项的键名
+     * @param {string} filename - 曲谱名
+     * @param {import("./gameProfile")} gameProfile - 游戏配置
+     * @param {*} [defaultValue] - 配置项的默认值
+     * @returns {*} - 返回配置项的值，如果不存在则返回默认值
+     */
+function readFileConfigForTarget(key, filename, gameProfile, defaultValue) {
+    const newKey = `${gameProfile.getProfileIdentifierTriple()}.${key}`;
+    const res1 = readFileConfig(newKey, filename, undefined);
+    if (res1 != undefined) {
+        return res1;
+    }
+    const res2 = readFileConfig(key, filename, undefined);
+    if (res2 != undefined) {
+        return res2;
+    }
+    return defaultValue;
+}
+
+/**
  * @param {number} timeSec
  */
 function sec2timeStr(timeSec) {
@@ -146,21 +176,7 @@ function sec2timeStr(timeSec) {
     return minuteStr + ":" + secondStr;
 }
 
-function NormalDistributionRandomizer(mean, stddev) {
-    this.mean = mean;
-    this.stddev = stddev;
-
-    this.next = function () {
-        var u = 0,
-            v = 0;
-        while (u === 0) u = Math.random(); //Converting [0,1) to (0,1)
-        while (v === 0) v = Math.random();
-        var num = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-        num = num * this.stddev + this.mean;
-        return num;
-    };
-}
-
+//humanify.js --- 为乐曲加入扰动, 让它听起来更像人弹的
 function Humanify() {
     this.stddev = 200;
     /**
@@ -169,11 +185,11 @@ function Humanify() {
      */
     this.setNoteAbsTimeStdDev = function (stddev) {
         this.stddev = stddev;
-    };
-
+    }
     /**
-     * @param {Array<[number, number]>} 乐曲数组 [音高, 所在时间(ms)]
+     * @param {import("./noteUtils.js").NoteLike[]} notes 乐曲数组
      * @brief 为乐曲加入扰动, 让它听起来更像是人弹的. 处理速度应该很快
+     * @return {import("./noteUtils.js").NoteLike[]} 扰动后的乐曲数组
      */
     this.humanify = function (notes) {
         var randomizer = new NormalDistributionRandomizer(0, this.stddev);
@@ -186,7 +202,22 @@ function Humanify() {
             return a[1] - b[1];
         });
         return notes;
-    };
+    }
+}
+
+function parseFile(filePath, musicdata) {
+    switch (filePath.music_type) {
+        case "tonejsjson":
+            return new ToneJsJSONParser().parseFile(filePath);
+        case "mid":
+            return new MidiParser().parseFile(filePath);
+        case "domiso":
+            return new DoMiSoTextParser().parseFile(filePath, undefined);
+        case "txt":
+            return SkyStudioJSONParser(musicdata);
+        default:
+            throw new Error("不支持的文件格式");
+    }
 }
 
 /**
@@ -206,25 +237,10 @@ function NopPass(config) {
      */
     this.run = function (input, progressCallback) {
         return input;
-    };
+    }
     this.getStatistics = function () {
         return {};
     };
-}
-
-function parseFile(filePath, musicdata) {
-    switch (filePath.music_type) {
-        case "tonejsjson":
-            return new ToneJsJSONParser().parseFile(filePath);
-        case "mid":
-            return new MidiParser().parseFile(filePath);
-        case "domiso":
-            return new DoMiSoTextParser().parseFile(filePath, undefined);
-        case "txt":
-            return SkyStudioJSONParser(musicdata);
-        default:
-            throw new Error("不支持的文件格式");
-    }
 }
 
 /**
@@ -242,7 +258,6 @@ function ParseSourceFilePass(config) {
      * @throws {Error} - 如果解析失败则抛出异常
      */
     this.run = function (sourceFilePath, progressCallback, musicdata) {
-        // let musicFormats = new MusicFormats();
         let tracksData = parseFile(sourceFilePath, musicdata);
         return tracksData;
     };
@@ -413,9 +428,9 @@ function NoteToKeyPass(config) {
             if (key == -1) {
                 continue;
             }
-            keyList.push([key, noteList[i][1]]);
+            keyList.push([key, noteList[i][1], noteList[i][2]]);
             if (progressCallback != null && i % 10 == 0) {
-                progressCallback((100 * i) / noteList.length);
+                progressCallback(100 * i / noteList.length);
             }
         }
         // @ts-ignore
@@ -470,7 +485,6 @@ function SingleKeyFrequencyLimitPass(config) {
                 if (note[0] === nextNote[0]) {
                     if (nextNote[1] - note[1] < sameNoteGapMin) {
                         noteData.splice(j, 1);
-                        //console.log("删除过于密集的音符:" + nextNote[0] + "(diff:" + (nextNote[1] - note[1]) + ")");
                         droppedNoteCnt++;
                     }
                 }
@@ -513,43 +527,52 @@ function MergeKeyPass(config) {
     if (config.maxBatchSize != null) {
         maxBatchSize = config.maxBatchSize;
     }
+
     /**
      * 运行此pass
-     * @param {Array<[key: number, time: number]>} noteData - 音乐数据
+     * @param {noteUtils.NoteLike[]} noteData - 音乐数据
      * @param {function(number):void} progressCallback - 进度回调函数, 参数为进度(0-100)
-     * @returns {Array<[keys: number[], time: number]>} - 返回解析后的数据
+     * @returns {noteUtils.NoteLike[]} - 返回解析后的数据
      * @throws {Error} - 如果解析失败则抛出异常
      */
     this.run = function (noteData, progressCallback) {
-        let mergedNoteData = new Array();
-        let lastTime = 0;
-        let lastNotes = new Set();
-        for (let i = 0; i < noteData.length; i++) {
+        let lastTime = noteData[0][1];
+        let lastSize = 0;
+        let lastNotes = new Array(maxBatchSize);
+        for (let i = 1; i < noteData.length; i++) {
             let note = noteData[i];
-            if (note[1] - lastTime < maxInterval && lastNotes.size < maxBatchSize) {
-                lastNotes.add(note[0] - 1);
-            } else {
-                if (lastNotes.size > 0) {
-                    mergedNoteData.push([Array.from(lastNotes), lastTime]);
+            if (note[1] - lastTime < maxInterval && lastSize < maxBatchSize) {
+                note[1] = lastTime;
+                //检查重复
+                if (lastNotes.indexOf(note[0]) != -1) {
+                    noteUtils.softDeleteNoteAt(noteData, i);
+                    continue;
                 }
-                lastNotes = new Set([note[0] - 1]);
+                lastNotes.push(note[0]);
+                lastSize++;
+            } else {
+                lastNotes = new Array(maxBatchSize);
+                lastSize = 0;
                 lastTime = note[1];
             }
         }
-        if (lastNotes.size > 0)
-            mergedNoteData.push([Array.from(lastNotes), lastTime]);
-        return mergedNoteData;
-    };
+        noteUtils.applyChanges(noteData);
+        return noteData;
+    }
 
     this.getStatistics = function () {
         return {};
-    };
+    }
 }
 
 /**
  * @brief 将按键列表转换为手势列表
  * @typedef {Object} KeyToGesturePassConfig
- * @property {number} pressDuration - 按键持续时间(毫秒)
+ * @property {GameProfile.NoteDurationImplementionType} [durationMode] - 按键时长模式, 默认为"none"
+ * @property {number} [pressDuration] - 默认的按键持续时间(毫秒), 仅在durationMode为"none"时有效, 默认为5
+ * @property {number} [maxGestureDuration] - 最大手势持续时间(毫秒)
+ * @property {number} [maxGestureSize] - 最大手势长度
+ * @property {number} [marginDuration] - 手势间隔时间(毫秒), 仅在durationMode为"native"时有效, 默认为100
  * @property {GameProfile} currentGameProfile - 当前游戏配置
  * @param {KeyToGesturePassConfig} config
  */
@@ -558,48 +581,182 @@ function KeyToGesturePass(config) {
     this.description = "将按键列表转换为手势列表";
 
     let pressDuration = 5; // 毫秒
+    let durationMode = "none";
+    let maxGestureDuration = 10000; // 毫秒
+    let maxGestureSize = 19;
+    let marginDuration = 100; // 毫秒
     let currentGameProfile = null;
+
 
     if (config.currentGameProfile == null) {
         throw new Error("currentGameProfile is null");
     }
+
     currentGameProfile = config.currentGameProfile;
-    if (config.pressDuration != null) {
+    if (config.pressDuration != null)
         pressDuration = config.pressDuration;
-    }
+    if (config.durationMode != null)
+        durationMode = config.durationMode;
+    if (config.maxGestureDuration != null)
+        maxGestureDuration = config.maxGestureDuration;
+    if (config.maxGestureSize != null)
+        maxGestureSize = config.maxGestureSize;
+    if (config.marginDuration != null)
+        marginDuration = config.marginDuration;
+
+    //统计数据
+    let directlyTruncatedNoteCnt = 0;
+    let groupTruncatedNoteCnt = 0;
+    let sameKeyTruncatedNoteCnt = 0;
+    let removedShortNoteCnt = 0;
+
+
     /**
      * 运行此pass
-     * @param {Array<[keys: number[], time: number]>} noteData - 音乐数据
+     * @param {noteUtils.Key[]} noteData - 音乐数据
      * @param {function(number):void} progressCallback - 进度回调函数, 参数为进度(0-100)
      * @returns {import("./players.js").Gestures} - 返回解析后的数据
-     * @throws {Error} - 如果解析失败则抛出异常
      */
     this.run = function (noteData, progressCallback) {
+        let haveDurationProperty = noteData[0][2] != null && noteData[0][2]["duration"] != null;
         let gestureTimeList = new Array();
-        noteData.forEach((note) => {
-            let time = note[1];
-            let gestureArray = new Array();
-            note[0].forEach((key) => {
-                let clickPos = currentGameProfile.getKeyPosition(key);
-                if (clickPos == null) {
-                    // console.log("音符超出范围，被丢弃");
-                    // console.log("key:" + key);
-                    return;
+        console.log(`durationMode: ${durationMode}`);
+        if (durationMode == "none" || !haveDurationProperty) {
+            let it = noteUtils.chordIterator(noteData);
+            for (let keys of it) {
+                let time = keys[0][1];
+                let gestureArray = new Array();
+                keys.forEach((key) => {
+                    const keyIndex = key[0]
+                    const clickPos = currentGameProfile.getKeyPosition(keyIndex);
+                    if (clickPos == null) {
+                        console.log(`按键 ${keyIndex} 超出范围，被丢弃`);
+                        return;
+                    }
+                    gestureArray.push([0, pressDuration, clickPos.slice()]);
+                });
+                if (gestureArray.length > 0)
+                    gestureTimeList.push([gestureArray, time / 1000]);
+            };
+        } else if (durationMode == "native") {
+            // 这组按键的结束时间
+            let currentGroupEndTime = 0;
+            // 这组按键的开始时间
+            let currentGroupStartTime = 0;
+
+            // 这组按键的按键列表
+            /** @type {Array<[keyIndex:number, startTime:number, endTime:number]>} */
+            let currentGroupKeys = new Array();
+            // 组列表
+            let groupList = new Array();
+            for (let key of noteData) {
+                // console.log(`key: ${JSON.stringify(key)}`);
+                let thisStartTime = key[1];
+                //@ts-ignore
+                let thisDuration = key[2]["duration"];
+                let thisEndTime = thisStartTime + thisDuration;
+                //截断超过最大手势长度的部分
+                if (thisEndTime - currentGroupStartTime > maxGestureDuration) {
+                    thisEndTime = currentGroupStartTime + maxGestureDuration;
+                    directlyTruncatedNoteCnt++;
                 }
-                gestureArray.push([0, pressDuration, clickPos]);
-            });
-            gestureTimeList.push([gestureArray, time / 1000]);
-        });
+                //这是这组按键的第一个按键
+                if (currentGroupKeys.length == 0) {
+                    currentGroupStartTime = thisStartTime;
+                    currentGroupEndTime = thisEndTime;
+                    currentGroupKeys.push([key[0], thisStartTime, thisEndTime]);
+                    continue;
+                }
+                //检查是否要开始新的一组
+                //这个按键的开始时间大于这组按键的结束时间, 或当前组按键数量已经达到最大值
+                //则开始新的一组
+                if (thisStartTime > currentGroupEndTime ||
+                    currentGroupKeys.length >= maxGestureSize) {
+                    // console.log(`start: ${currentGroupStartTime}ms, end: ${currentGroupEndTime}ms, current: ${thisStartTime}ms, duration: ${currentGroupEndTime - currentGroupStartTime}ms`);
+                    //截断所有的音符结束时间到当前音符开始时间 TODO: 这不是最优解
+                    for (let i = 0; i < currentGroupKeys.length; i++) {
+                        let key = currentGroupKeys[i];
+                        if (key[2] > thisStartTime) {
+                            groupTruncatedNoteCnt++;
+                            key[2] = thisStartTime;
+                        }
+                    }
+                    //避免首尾相连
+                    for (let i = 0; i < currentGroupKeys.length; i++) {
+                        let key = currentGroupKeys[i];
+                        if (Math.abs(key[2] - thisStartTime) < marginDuration) {
+                            key[2] = thisStartTime - marginDuration;
+                        }
+                    }
+                    groupList.push(currentGroupKeys);
+                    currentGroupKeys = new Array();
+                }
+                //这是这组按键的第一个按键
+                if (currentGroupKeys.length == 0) {
+                    currentGroupStartTime = thisStartTime;
+                    currentGroupEndTime = thisEndTime;
+                    currentGroupKeys.push([key[0], thisStartTime, thisEndTime]);
+                    continue;
+                }
+                //检查是否与相同的按键重叠
+                let overlappedSamekeyIndex = currentGroupKeys.findIndex((e) => {
+                    return e[0] == key[0] && e[2] > thisStartTime;
+                });
+                if (overlappedSamekeyIndex != -1) {
+                    //把重叠的按键截断
+                    let overlappedSamekey = currentGroupKeys[overlappedSamekeyIndex];
+                    overlappedSamekey[2] = thisStartTime - marginDuration;
+                    sameKeyTruncatedNoteCnt++;
+                }
+                //检测是否存在头尾相连的问题(一个按键的尾部正好与另一个按键的头部相连, 会导致systemUi崩溃!)
+                for (let i = 0; i < currentGroupKeys.length; i++) {
+                    let key = currentGroupKeys[i];
+                    if (Math.abs(key[2] - thisStartTime) < marginDuration) {
+                        key[2] = thisStartTime - marginDuration;
+                    }
+                }
+                //添加这个按键
+                currentGroupKeys.push([key[0], thisStartTime, thisEndTime]);
+            }
+            if (currentGroupKeys.length > 0) groupList.push(currentGroupKeys);
+            //转换为手势
+            for (let group of groupList) {
+                /** @type {Array <[delay: number, duration: number, pos: [x: number,y: number]]>} */
+                let gestureArray = new Array();
+                let groupStartTime = group[0][1];
+                for (let key of group) {
+                    let delay = key[1] - groupStartTime;
+                    let duration = key[2] - key[1];
+                    if (duration < pressDuration) {
+                        removedShortNoteCnt++;
+                        continue; //忽略持续时间过短的按键
+                    }
+                    let clickPos = currentGameProfile.getKeyPosition(key[0]);
+                    if (clickPos == null) {
+                        console.log(`按键 ${key[0]} 超出范围，被丢弃`);
+                        continue;
+                    }
+                    gestureArray.push([delay, duration, clickPos.slice()]);
+                }
+                if (gestureArray.length > 0)
+                    gestureTimeList.push([gestureArray, groupStartTime / 1000]);
+            }
+        }
         return gestureTimeList;
-    };
+    }
 
     this.getStatistics = function () {
-        return {};
-    };
+        return {
+            "directlyTruncatedNoteCnt": directlyTruncatedNoteCnt,
+            "groupTruncatedNoteCnt": groupTruncatedNoteCnt,
+            "sameKeyTruncatedNoteCnt": sameKeyTruncatedNoteCnt,
+            "removedShortNoteCnt": removedShortNoteCnt
+        };
+    }
 }
 
 /**
- * @brief 限制过长的空白部分的长度
+ * @brief 限制过长的空白部分的长度，删除过长的空白部分
  * @typedef {Object} LimitBlankDurationPassConfig
  * @property {number} [maxBlankDuration] - 最大空白时间(毫秒), 默认为5000
  * @param {LimitBlankDurationPassConfig} config
@@ -615,31 +772,24 @@ function LimitBlankDurationPass(config) {
     }
     /**
      * 运行此pass
-     * @template T
-     * @param {Array<[T, time: number]>} noteData - 音乐数据
+     * @param {noteUtils.NoteLike[]} noteData - 音乐数据
      * @param {function(number):void} progressCallback - 进度回调函数, 参数为进度(0-100)
-     * @returns {Array<[T, time: number]>} - 返回解析后的数据
+     * @returns {noteUtils.NoteLike[]} - 返回解析后的数据
      * @throws {Error} - 如果解析失败则抛出异常
      */
     this.run = function (noteData, progressCallback) {
-        let deltaTimes = new Array();
-        for (let i = 0; i < noteData.length - 1; i++) {
-            deltaTimes.push(noteData[i + 1][1] - noteData[i][1]);
+        noteData = noteUtils.toRelativeTime(noteData);
+        for (let i = 0; i < noteData.length; i++) {
+            if (noteData[i][1] > maxBlankDuration)
+                noteData[i][1] = maxBlankDuration;
         }
-        for (let i = 0; i < deltaTimes.length; i++) {
-            if (deltaTimes[i] > maxBlankDuration) {
-                deltaTimes[i] = maxBlankDuration;
-            }
-        }
-        for (let i = 0; i < noteData.length - 1; i++) {
-            noteData[i + 1][1] = noteData[i][1] + deltaTimes[i];
-        }
+        noteData = noteUtils.toAbsoluteTime(noteData);
         return noteData;
-    };
+    }
 
     this.getStatistics = function () {
         return {};
-    };
+    }
 }
 
 /**
@@ -651,31 +801,36 @@ function SkipIntroPass(config) {
     this.name = "SkipIntroPass";
     this.description = "跳过前奏的空白部分";
 
+    const maxIntroTime = 2000; // 毫秒
+
     /**
      * 运行此pass
      * @template T
-     * @param {Array<[T, time: number]>} noteData - 音乐数据
+     * @param {noteUtils.NoteLike[]} noteData - 音乐数据
      * @param {function(number):void} progressCallback - 进度回调函数, 参数为进度(0-100)
-     * @returns {Array<[T, time: number]>} - 返回解析后的数据
+     * @returns {noteUtils.NoteLike[]} - 返回解析后的数据
      * @throws {Error} - 如果解析失败则抛出异常
      */
     this.run = function (noteData, progressCallback) {
         let introTime = noteData[0][1];
+        if (introTime < maxIntroTime) return noteData;
+        let deltaTime = introTime - maxIntroTime;
         for (let i = 0; i < noteData.length; i++) {
-            noteData[i][1] -= introTime;
+            noteData[i][1] -= deltaTime;
         }
         return noteData;
-    };
+    }
 
     this.getStatistics = function () {
         return {};
-    };
+    }
 }
 
 /**
- * @brief 限制音符频率
+ * @brief 限制音符频率，延迟过快的音符
  * @typedef {Object} NoteFrequencySoftLimitPassConfig
  * @property {number} [minInterval] - 最小间隔(毫秒), 默认为150
+ * @param {NoteFrequencySoftLimitPassConfig} config
  */
 function NoteFrequencySoftLimitPass(config) {
     this.name = "NoteFrequencySoftLimitPass";
@@ -693,10 +848,9 @@ function NoteFrequencySoftLimitPass(config) {
 
     /**
      * 运行此pass
-     * @template T
-     * @param {Array<[T, time: number]>} noteData - 音乐数据
+     * @param {noteUtils.NoteLike[]} noteData - 音乐数据
      * @param {function(number):void} progressCallback - 进度回调函数, 参数为进度(0-100)
-     * @returns {Array<[T, time: number]>} - 返回解析后的数据
+     * @returns {noteUtils.NoteLike[]} - 返回解析后的数据
      * @throws {Error} - 如果解析失败则抛出异常
      */
     this.run = function (noteData, progressCallback) {
@@ -713,11 +867,11 @@ function NoteFrequencySoftLimitPass(config) {
             noteData[i + 1][1] = noteData[i][1] + deltaTime;
         }
         return noteData;
-    };
+    }
 
     this.getStatistics = function () {
         return {};
-    };
+    }
 }
 
 /**
@@ -739,21 +893,103 @@ function SpeedChangePass(config) {
 
     /**
      * 运行此pass
-     * @template T
-     * @param {Array<[T, number]>} noteData - 音乐数据
-     * @param {function(number):void}
-     * @returns {Array<[T, number]>} - 返回处理后的数据
+     * @param {noteUtils.NoteLike[]} noteData - 音乐数据
+     * @param {function(number):void} progressCallback - 进度回调函数, 参数为进度(0-100)
+     * @returns {noteUtils.NoteLike[]} - 返回处理后的数据
      */
     this.run = function (noteData, progressCallback) {
         for (let i = 0; i < noteData.length; i++) {
             noteData[i][1] /= speed;
         }
         return noteData;
-    };
+    }
 
     this.getStatistics = function () {
         return {};
-    };
+    }
+}
+
+/**
+ * @brief 限制同一时刻按下的按键数量
+ * @typedef {Object} ChordNoteCountLimitPassConfig
+ * @property {number} [maxNoteCount] - 最大音符个数, 默认为9
+ * @property {string} [limitMode] - 限制模式, 可选值为"delete"(删除多余的音符)或"split"(拆分成多组), 默认为"delete"
+ * @property {number} [splitDelay] - 拆分后音符的延迟(毫秒), 仅在limitMode为"split"时有效, 默认为5
+ * @property {string} [selectMode] - 选择保留哪些音符, 可选值为"high"(音高最高的)/"low"(音高最低的)/"random"(随机选择), 默认为“high"
+ * @property {number} [randomSeed] - 随机种子, 默认为74751
+ * @param {ChordNoteCountLimitPassConfig} config
+ */
+function ChordNoteCountLimitPass(config) {
+    this.name = "ChordNoteCountLimitPass";
+    this.description = "限制同一时刻按下的按键数量";
+
+    let maxNoteCount = 9;
+    let limitMode = "delete";
+    let splitDelay = 5;
+    let selectMode = "high";
+    let randomSeed = 74751;
+
+    if (config.maxNoteCount != null) {
+        maxNoteCount = config.maxNoteCount;
+    }
+    if (config.limitMode != null) {
+        limitMode = config.limitMode;
+    }
+    if (config.splitDelay != null) {
+        splitDelay = config.splitDelay;
+    }
+    if (config.selectMode != null) {
+        selectMode = config.selectMode;
+    }
+    if (config.randomSeed != null) {
+        randomSeed = config.randomSeed;
+    }
+
+    /**
+     * 运行此pass
+     * @param {noteUtils.NoteLike[]} noteData - 音乐数据
+     * @param {function(number):void} progressCallback - 进度回调函数, 参数为进度(0-100)
+     * @returns {noteUtils.NoteLike[]} - 返回处理后的数据
+     */
+    this.run = function (noteData, progressCallback) {
+        const algorithms = new Algorithms();
+        const prng = algorithms.PRNG(randomSeed);
+        const totalLength = noteData.length;
+        let i = 0;
+        while (true) {
+            let ni = noteUtils.nextChordStart(noteData, i);
+            if (ni == noteData.length) break;
+            let chord = noteData.subarray(i, ni - 1);
+            if (chord.length > maxNoteCount) {
+                switch (selectMode) {
+                    case "high": //从高到低排序
+                        chord.sort((a, b) => b[0] - a[0]);
+                        break;
+                    case "low": //
+                        chord.sort((a, b) => a[0] - b[0]);
+                        break;
+                    case "random":
+                        chord = algorithms.shuffle(chord, prng);
+                        break;
+                }
+
+                for (let j = maxNoteCount; j < chord.length; j++) {
+                    if (limitMode == "delete") {
+                        noteUtils.softDeleteNoteAt(noteData, i + j);
+                    } else if (limitMode == "split") {
+                        noteUtils.softChangeNoteTime(chord[j], chord[j][1] + splitDelay * (j - maxNoteCount + 1));
+                    }
+                }
+            }
+            i = ni;
+        }
+        noteUtils.applyChanges(noteData);
+        noteData.sort((a, b) => a[1] - b[1]);
+        return noteData;
+    }
+    this.getStatistics = function () {
+        return {};
+    }
 }
 
 function Passes() {
@@ -770,6 +1006,7 @@ function Passes() {
     this.passes.push(SkipIntroPass);
     this.passes.push(NoteFrequencySoftLimitPass);
     this.passes.push(SpeedChangePass);
+    this.passes.push(ChordNoteCountLimitPass);
 
     this.getPassByName = function (name) {
         for (let i = 0; i < this.passes.length; i++) {
@@ -814,16 +1051,12 @@ function PassManager() {
         for (let passConfig of this.passConfigs) {
             let pass = new passConfig.class(passConfig.config);
             let startTime = new Date().getTime();
-            output = pass.run(output, passConfig.progressCallback, passConfig.config);
+            output = pass.run(output, passConfig.progressCallback);
             let endTime = new Date().getTime();
-            passConfig.finishCallback(
-                output,
-                pass.getStatistics(),
-                endTime - startTime
-            );
+            passConfig.finishCallback(output, pass.getStatistics(), endTime - startTime);
         }
         return output;
-    };
+    }
 
     this.reset = function () {
         this.passConfigs = [];
@@ -837,17 +1070,219 @@ function PassManager() {
             hashCode = hashCode % 2147483647;
         }
         return hashCode;
-    };
+    }
 
     function stringHashCode(str) {
         let hash = 0;
         if (str.length == 0) return hash;
         for (let i = 0; i < str.length; i++) {
             let char = str.charCodeAt(i);
-            hash = (hash << 5) - hash + char;
+            hash = ((hash << 5) - hash) + char;
             hash = hash & hash;
         }
         return hash;
+    }
+}
+
+/**
+ * @brief 获取数组的子数组(引用)
+ */
+Object.defineProperty(Array.prototype, 'subarray', {
+    value: function (/** @type {number} */ i, /** @type {number} */ j) {
+        var self = this, arr = [];
+        for (var n = 0; i <= j; i++, n++) {
+            (function (i) {
+                Object.defineProperty(arr, n, {       //Array is an Object
+                    get: function () {
+                        return self[i];
+                    },
+                    set: function (value) {
+                        self[i] = value;
+                        return value;
+                    }
+                });
+            })(i);
+        }
+        return arr;
+    },
+    writable: true,
+    configurable: true
+});
+
+function NoteUtils() {
+    /**
+     * @brief 将绝对时间的音符数据转换为相对时间的音符数据(每个音符的时间代表与上一个音符的时间差)
+     * @param {Array<NoteLike>} noteData - 音乐数据(会被修改)
+     * @returns {Array<NoteLike>} - 返回相对时间的音符数据
+     */
+    this.toRelativeTime = function (noteData) {
+        let lastTime = 0;
+        for (let i = 0; i < noteData.length; i++) {
+            let newTime = noteData[i][1] - lastTime;
+            lastTime = noteData[i][1];
+            noteData[i][1] = newTime;
+        }
+        return noteData;
+    }
+
+    /**
+     * @brief 将相对时间的音符数据转换为绝对时间的音符数据
+     * @param {Array<NoteLike>} noteData - 音乐数据(会被修改)
+     * @returns {Array<NoteLike>} - 返回绝对时间的音符数据
+     */
+    this.toAbsoluteTime = function (noteData) {
+        let curTime = 0;
+        for (let i = 0; i < noteData.length; i++) {
+            let newTime = noteData[i][1] + curTime;
+            curTime = newTime;
+            noteData[i][1] = newTime;
+        }
+        return noteData;
+    }
+
+    /**
+     * @brief 删除指定位置的音符
+     * @param {Array<NoteLike>} noteData - 音乐数据(会被修改)
+     * @param {number} index - 要删除的音符的位置
+     * @returns {Array<NoteLike>} - 返回删除后的音符数据
+     */
+    this.deleteNoteAt = function (noteData, index) {
+        noteData.splice(index, 1);
+        return noteData;
+    }
+
+    /**
+     * @brief "软"删除指定位置的音符, 不改变数组长度
+     * @param {Array<NoteLike>} noteData - 音乐数据(会被修改)
+     * @param {number} index - 要删除的音符的位置
+     * @returns {Array<NoteLike>} - 返回删除后的音符数据
+     */
+    this.softDeleteNoteAt = function (noteData, index) {
+        if (noteData[index][2] == undefined) {
+            noteData[index][2] = {};
+        }
+        //@ts-ignore
+        noteData[index][2]["deleted"] = true;
+        return noteData;
+    }
+
+    /**
+     * @brief "软"删除指定音符
+     * @param {NoteLike} note - 要删除的音符
+     */
+    this.softDeleteNote = function (note) {
+        if (note[2] == undefined) {
+            note[2] = {};
+        }
+        //@ts-ignore
+        note[2]["deleted"] = true;
+    }
+
+    /**
+     * @brief "软"更改指定位置的音符的时间
+     * @param {Array<NoteLike>} noteData - 音乐数据(会被修改)
+     * @param {number} index - 要更改的音符的位置
+     * @param {number} time - 新的时间
+     * @returns {Array<NoteLike>} - 返回更改后的音符数据
+     */
+    this.softChangeNoteTimeAt = function (noteData, index, time) {
+        if (noteData[index][2] == undefined) {
+            noteData[index][2] = {};
+        }
+        //@ts-ignore
+        noteData[index][2]["newTime"] = time;
+        return noteData;
+    }
+
+    /**
+     * @brief "软"更改指定音符的时间
+     * @param {NoteLike} note - 要更改的音符
+     * @param {number} time - 新的时间
+     */
+    this.softChangeNoteTime = function (note, time) {
+        if (note[2] == undefined) {
+            note[2] = {};
+        }
+        //@ts-ignore
+        note[2]["newTime"] = time;
+    }
+
+    /**
+     * @brief 使更改生效
+     * @param {Array<NoteLike>} noteData - 音乐数据(会被修改)
+     * @returns {Array<NoteLike>} - 返回删除后的音符数据
+     */
+    this.applyChanges = function (noteData) {
+        for (let i = 0; i < noteData.length; i++) {
+            //@ts-ignore
+            if (noteData[i][2]["deleted"] == true) {
+                noteData.splice(i, 1);
+                i--;
+            }
+            //@ts-ignore
+            else if (noteData[i][2]["newTime"] != undefined) {
+                //@ts-ignore
+                noteData[i][1] = noteData[i][2]["newTime"];
+                //@ts-ignore
+                delete noteData[i][2]["newTime"];
+            }
+        }
+        noteData.sort((a, b) => {
+            return a[1] - b[1];
+        });
+        return noteData;
+    }
+
+    /**
+     * @brief 获取下一组音符的开始位置
+     * @param {Array<NoteLike>} noteData - 音乐数据
+     * @param {number} index - 当前音符的位置
+     * @returns {number} - 返回下一组音符的开始位置
+     */
+    this.nextChordStart = function (noteData, index) {
+        const eps = 1; // 1ms
+        let curTime = noteData[index][1];
+        let nextTime = curTime + eps;
+        while (index < noteData.length && noteData[index][1] < nextTime) {
+            index++;
+        }
+        return index;
+    }
+
+    /**
+     * @brief 音符组迭代器
+     * @param {Array<NoteLike>} noteData - 音乐数据
+     * @returns {IterableIterator<Array<NoteLike>>} - 返回音符组迭代器
+     */
+    this.chordIterator = function* (noteData) {
+        let index = 0;
+        while (index < noteData.length) {
+            let nextIndex = this.nextChordStart(noteData, index);
+            yield noteData.subarray(index, nextIndex - 1);
+            index = nextIndex;
+        }
+    }
+
+    /**
+     * @brief 将分散的音符组合并为连续的音符
+     * @param {Array<NoteLike>} noteData - 音乐数据
+     * @returns {Array<PackedNoteLike>} - 返回合并后的音符数据
+     */
+    this.packNotes = function (noteData) {
+        let packedNoteData = [];
+        let it = this.chordIterator(noteData);
+        for (let keys of it) {
+            let time = keys[0][1];
+            let keyArray = new Array();
+            let attributes = new Array();
+            keys.forEach((key) => {
+                keyArray.push(key[0]);
+                attributes.push(key[2]);
+            });
+            packedNoteData.push([keyArray, time, attributes]);
+        }
+        //@ts-ignore
+        return packedNoteData;
     }
 }
 
@@ -858,11 +1293,12 @@ function PassManager() {
  */
 function SkyStudioJSONParser(musicdata) {
     //左上角为key0,右下角为key15,音高从C4到C6
-    let skyKey2Midi = [
-        48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72,
+    this.skyKey2Midi = [
+        48, 50, 52, 53, 55,
+        57, 59, 60, 62, 64,
+        65, 67, 69, 71, 72,
     ];
     jsonData = JSON.parse(musicdata);
-    // log(jsonData)
     jsonData = jsonData[0];
     if (jsonData.isEncrypted) {
         throw new Error("文件已加密，无法解析！");
@@ -873,48 +1309,37 @@ function SkyStudioJSONParser(musicdata) {
     let transcribedBy = jsonData.transcribedBy;
     let isComposed = jsonData.isComposed;
     let bpm = jsonData.bpm;
-    let metaDataText =
-        "乐曲名称: " +
-        name +
-        "\n" +
-        "作者: " +
-        author +
-        "\n" +
-        "转谱人: " +
-        transcribedBy +
-        "\n" +
-        "isComposed: " +
-        isComposed +
-        "\n" +
-        "BPM: " +
-        bpm;
+    let metaDataText = "乐曲名称: " + name + "\n" + "作者: " + author + "\n" + "转谱人: " + transcribedBy + "\n" + "isComposed: " + isComposed + "\n" + "BPM: " + bpm;
     let notes = jsonData.songNotes;
     /** @type {import("./musicFormats").Note[]} */
     let ret = [];
     for (let i = 0; i < notes.length; i++) {
         let n = notes[i];
         let key = parseInt(n.key.split("y")[1]); //"key"
-        let pitch = skyKey2Midi[key];
-        ret.push([pitch, n.time, undefined]);
+        let pitch = this.skyKey2Midi[key];
+        ret.push([pitch, n.time, {}]);
     }
     return {
-        haveMultipleTrack: false,
-        trackCount: 1,
-        durationType: "none",
-        tracks: [
+        "haveMultipleTrack": false,
+        "trackCount": 1,
+        "durationType": "none",
+        "tracks": [
             {
-                name: name,
-                noteCount: ret.length,
-                notes: ret,
-            },
+                "name": name,
+                "channel": 0,
+                "instrumentId": 0,
+                "trackIndex": 0,
+                "noteCount": ret.length,
+                "notes": ret
+            }
         ],
-        metadata: [
+        "metadata": [
             {
-                name: "SkyStudio乐曲信息",
-                value: metaDataText,
-            },
-        ],
-    };
+                "name": "SkyStudio乐曲信息",
+                "value": metaDataText
+            }
+        ]
+    }
 }
 
 (function initialize() {
@@ -964,7 +1389,6 @@ function SkyStudioJSONParser(musicdata) {
 
         if (gameProfile.getCurrentConfig() == null) {
             console.error("未找到合适配置, 已加载默认配置!");
-            // console.log("未找到合适配置, 已加载默认配置!");
             gameProfile.setConfigByName("楚留香");
         }
 
@@ -1017,6 +1441,7 @@ function SkyStudioJSONParser(musicdata) {
 })();
 
 function Visualizer() {
+
     const mergeThreshold = 0.01; //秒, 和main.js中的值保持一致
 
     var mergedNoteData = [];
@@ -1033,11 +1458,12 @@ function Visualizer() {
 
     /**
      * 加载乐曲数据
-     * @param {Array<[Array<number>, number]>} data 乐曲数据[[按键编号(从0开始),...], 所在时间[s]]
+     * @param {Array<import("./noteUtils.js").PackedKey>} data 乐曲数据[[按键编号(从0开始),...], 所在时间[s]]
      */
     this.loadNoteData = function (data) {
         mergedNoteData = data.slice();
-    };
+    }
+
 
     /**
      * 设置按键排布
@@ -1047,7 +1473,7 @@ function Visualizer() {
     this.setKeyLayout = function (row_, col_) {
         row = row_;
         col = col_;
-    };
+    }
 
     /**
      * 下一个按键
@@ -1055,7 +1481,7 @@ function Visualizer() {
     this.next = function () {
         lastStep = step;
         step++;
-    };
+    }
 
     /**
      * 切换到指定按键
@@ -1070,7 +1496,8 @@ function Visualizer() {
         step = step_;
         lastStep = Math.max(step - 1, 0);
         lastFirstKeyIndex = -2;
-    };
+    }
+
 
     /**
      * 绘制按键
@@ -1084,18 +1511,14 @@ function Visualizer() {
         let boardHeight = canvas.getHeight() / boardRow;
         // console.log("board size: " + boardWidth + "x" + boardHeight +" row: "+boardRow+" col: "+boardCol);
         //计算按键的大小 //圆, 间距为按键直径1.4 倍
-        let keyDiameter = Math.min(
-            boardWidth / ((col + 1) * 1.4),
-            boardHeight / ((row + 1) * 1.4)
-        );
+        let keyDiameter = Math.min(boardWidth / ((col + 1) * 1.4), boardHeight / ((row + 1) * 1.4));
         let keyRadius = keyDiameter / 2;
         let keySpacingX = boardWidth / (col + 1);
         let keySpacingY = boardHeight / (row + 1);
         let drawStep = Math.max(0, step);
 
         //第一个board对应那一个按键
-        let firstKeyIndex =
-            Math.floor(drawStep / (boardRow * boardCol)) * boardRow * boardCol;
+        let firstKeyIndex = Math.floor(drawStep / (boardRow * boardCol)) * boardRow * boardCol;
         //逐一绘制画面
         for (let i = 0; i < boardRow; i++) {
             for (let j = 0; j < boardCol; j++) {
@@ -1123,29 +1546,16 @@ function Visualizer() {
                             paint.setARGB(192, 128, 128, 128);
                         }
                         //圆角矩形
-                        canvas.drawRoundRect(
-                            keyX - keyRadius,
-                            keyY - keyRadius,
-                            keyX + keyRadius,
-                            keyY + keyRadius,
-                            3,
-                            3,
-                            paint
-                        );
+                        canvas.drawRoundRect(keyX - keyRadius, keyY - keyRadius, keyX + keyRadius, keyY + keyRadius, 3, 3, paint);
                     }
                 }
                 //绘制编号
                 paint.setARGB(128, 255, 255, 255);
                 paint.setTextSize(20);
-                canvas.drawText(
-                    i * boardCol + j + firstKeyIndex,
-                    x + 10,
-                    y + 30,
-                    paint
-                );
+                canvas.drawText(i * boardCol + j + firstKeyIndex, x + 10, y + 30, paint);
             }
         }
-    };
+    }
 
     /**
      * 绘制背景
@@ -1160,8 +1570,7 @@ function Visualizer() {
         let drawStep = Math.max(0, step);
 
         //第一个board对应那一个按键
-        let firstKeyIndex =
-            Math.floor(drawStep / (boardRow * boardCol)) * boardRow * boardCol;
+        let firstKeyIndex = Math.floor(drawStep / (boardRow * boardCol)) * boardRow * boardCol;
         //逐一绘制画面
         for (let i = 0; i < boardRow; i++) {
             for (let j = 0; j < boardCol; j++) {
@@ -1182,7 +1591,7 @@ function Visualizer() {
                 canvas.drawRect(x, y, x + boardWidth, y + boardHeight, paint);
             }
         }
-    };
+    }
 
     /**
      * 绘画!
@@ -1192,33 +1601,17 @@ function Visualizer() {
         let Color = android.graphics.Color;
         let PorterDuff = android.graphics.PorterDuff;
         //创建bitmap
-        if (
-            keysBitmap == null ||
-            keysBitmap.getWidth() != canvas.getWidth() ||
-            keysBitmap.getHeight() != canvas.getHeight()
-        ) {
-            keysBitmap = android.graphics.Bitmap.createBitmap(
-                canvas.getWidth(),
-                canvas.getHeight(),
-                android.graphics.Bitmap.Config.ARGB_8888
-            );
+        if (keysBitmap == null || keysBitmap.getWidth() != canvas.getWidth() || keysBitmap.getHeight() != canvas.getHeight()) {
+            keysBitmap = android.graphics.Bitmap.createBitmap(canvas.getWidth(), canvas.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
             //强制重绘
             lastStep = -2;
-            // console.log("create keysBitmap: " + keysBitmap.getWidth() + "x" + keysBitmap.getHeight());
+            console.log("create keysBitmap: " + keysBitmap.getWidth() + "x" + keysBitmap.getHeight());
         }
-        if (
-            backgroundBitmap == null ||
-            backgroundBitmap.getWidth() != canvas.getWidth() ||
-            backgroundBitmap.getHeight() != canvas.getHeight()
-        ) {
-            backgroundBitmap = android.graphics.Bitmap.createBitmap(
-                canvas.getWidth(),
-                canvas.getHeight(),
-                android.graphics.Bitmap.Config.ARGB_8888
-            );
+        if (backgroundBitmap == null || backgroundBitmap.getWidth() != canvas.getWidth() || backgroundBitmap.getHeight() != canvas.getHeight()) {
+            backgroundBitmap = android.graphics.Bitmap.createBitmap(canvas.getWidth(), canvas.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
             //强制重绘
             lastFirstKeyIndex = -2;
-            // console.log("create backgroundBitmap: " + backgroundBitmap.getWidth() + "x" + backgroundBitmap.getHeight());
+            console.log("create backgroundBitmap: " + backgroundBitmap.getWidth() + "x" + backgroundBitmap.getHeight());
         }
 
         if (lastStep != step) {
@@ -1229,8 +1622,7 @@ function Visualizer() {
             this.drawBackground(backgroundCanvas);
             lastStep = step;
 
-            let firstKeyIndex =
-                Math.floor(step / (boardRow * boardCol)) * boardRow * boardCol;
+            let firstKeyIndex = Math.floor(step / (boardRow * boardCol)) * boardRow * boardCol;
             if (firstKeyIndex != lastFirstKeyIndex) {
                 //如果第一个按键变化了, 则重绘按键
                 let keysCanvas = new Canvas(keysBitmap);
@@ -1243,13 +1635,27 @@ function Visualizer() {
         canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
         canvas.drawBitmap(backgroundBitmap, 0, 0, null);
         canvas.drawBitmap(keysBitmap, 0, 0, null);
-    };
+    }
 }
 
-/**
- * @typedef {Array<[number,number,...import("./gameProfile").pos2d]>} Gestures
- */
+//players.js -- 实现播放/演奏功能
+function NormalDistributionRandomizer(mean, stddev) {
+    this.mean = mean;
+    this.stddev = stddev;
 
+    this.next = function () {
+        var u = 0, v = 0;
+        while (u === 0) u = Math.random(); //Converting [0,1) to (0,1)
+        while (v === 0) v = Math.random();
+        var num = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        num = num * this.stddev + this.mean;
+        return num;
+    }
+}
+/**
+ * @typedef {[delay: number,duration: number, points: ...import("./gameProfile").pos2d[]]} Gesture
+ * @typedef {Array<Gesture>} Gestures
+ */
 function AutoJsGesturePlayer() {
     /**
      * @enum {number}
@@ -1261,7 +1667,7 @@ function AutoJsGesturePlayer() {
         SEEK_END: 3,
         UNINITIALIZED: 4,
         FINISHED: 5,
-    };
+    }
 
     this.PlayerStates = PlayerStates;
 
@@ -1285,9 +1691,9 @@ function AutoJsGesturePlayer() {
     let onPlayNote = function (/** @type {number} */ position) { };
 
     /**
-     * @type {function(number):void}
-     * @description 状态切换回调函数
-     */
+ * @type {function(number):void}
+ * @description 状态切换回调函数
+ */
     let onStateChange = function (/** @type {number} */ newState) { };
 
     /**
@@ -1313,36 +1719,59 @@ function AutoJsGesturePlayer() {
     let playSpeed = 1;
 
     /**
+     * @type number
+     * @description 点击位置的平均偏差(像素)
+     * @private
+     * @default 0
+     */
+    let clickPositionDeviationPx = 0;
+
+    /**
+     * @type {NormalDistributionRandomizer|null}
+     */
+    let clickPositionDeviationRandomizer = null;
+
+    /**
      * @brief 设置手势和时间数据
      * @param {Array<[Gestures, number]>} gestureTimeList_ 手势和时间数据
      */
     this.setGestureTimeList = function (gestureTimeList_) {
         gestureTimeList = gestureTimeList_;
-    };
+    }
+
+    /**
+     * @brief 设置点击位置的平均偏差(像素)
+     * @param {number} clickPositionDeviationPx_ 点击位置的平均偏差(像素)
+     */
+    this.setClickPositionDeviationPx = function (clickPositionDeviationPx_) {
+        clickPositionDeviationPx = clickPositionDeviationPx_;
+        clickPositionDeviationRandomizer = new NormalDistributionRandomizer(0, clickPositionDeviationPx);
+    }
 
     /**
      * @brief 启动播放
-     *
+     * 
      */
     this.start = function () {
         playerState = PlayerStates.UNINITIALIZED;
         position = 0;
-        playerThread = threads.start(playerThreadFunc);
-    };
+        let func = playerThreadFunc.bind(this);
+        playerThread = threads.start(func);
+    }
 
     /**
      * @brief 暂停播放
      */
     this.pause = function () {
         playerState = PlayerStates.PAUSED;
-    };
+    }
 
     /**
      * @brief 继续播放
      */
     this.resume = function () {
         playerState = PlayerStates.SEEK_END;
-    };
+    }
 
     /**
      * @brief 设置播放位置
@@ -1350,13 +1779,10 @@ function AutoJsGesturePlayer() {
      * @note TODO: 线程安全?
      */
     this.seekTo = function (position_) {
-        if (
-            playerState == PlayerStates.PLAYING ||
-            playerState == PlayerStates.SEEK_END
-        )
+        if (playerState == PlayerStates.PLAYING || playerState == PlayerStates.SEEK_END)
             playerState = PlayerStates.SEEKING;
         position = position_;
-    };
+    }
 
     /**
      * @brief 获取播放位置
@@ -1364,7 +1790,7 @@ function AutoJsGesturePlayer() {
      */
     this.getCurrentPosition = function () {
         return position;
-    };
+    }
 
     /**
      * @brief 获取播放状态
@@ -1372,7 +1798,7 @@ function AutoJsGesturePlayer() {
      */
     this.getState = function () {
         return playerState;
-    };
+    }
 
     /**
      * @brief 获取播放速度
@@ -1380,7 +1806,7 @@ function AutoJsGesturePlayer() {
      */
     this.getPlaySpeed = function () {
         return playSpeed;
-    };
+    }
 
     /**
      * @brief 设置播放速度
@@ -1388,14 +1814,14 @@ function AutoJsGesturePlayer() {
      */
     this.setPlaySpeed = function (playSpeed_) {
         playSpeed = playSpeed_;
-    };
+    }
     /**
      * @brief 设置回调函数
      * @param {function(number):void} onPlayNote_ 每播放一个音符的回调函数
      */
     this.setOnPlayNote = function (onPlayNote_) {
         onPlayNote = onPlayNote_;
-    };
+    }
 
     /**
      * @brief 状态切换回调函数
@@ -1403,7 +1829,7 @@ function AutoJsGesturePlayer() {
      */
     this.setOnStateChange = function (onStateChange_) {
         onStateChange = onStateChange_;
-    };
+    }
 
     /**
      * @brief 停止播放并释放资源
@@ -1414,14 +1840,43 @@ function AutoJsGesturePlayer() {
             playerThread.interrupt();
             playerThread.join();
             playerThread = null;
-            gestureTimeList = null;
             playerState = PlayerStates.FINISHED;
             onStateChange(playerState);
             position = 0;
             return true;
         }
         return false;
-    };
+    }
+
+    /**
+     * @brief 执行一组操作
+     * @param {Gestures} _gestures 手势
+     */
+    this.exec = function (_gestures) {
+        _gestures = transformGesture(_gestures);
+        gestures.apply(null, _gestures);
+    }
+
+    /**
+     * @brief 对这组手势做处理
+     * @param {Gestures} gestures 手势
+     * @returns {Gestures} 处理后的手势
+     */
+    function transformGesture(gestures) {
+        //随机偏移
+        if (clickPositionDeviationPx > 0) {
+            gestures.forEach(gesture => {
+                let deviation, angle;
+                do {
+                    deviation = clickPositionDeviationRandomizer.next();
+                } while (Math.abs(deviation) > 2 * clickPositionDeviationPx);
+                angle = Math.random() * 2 * Math.PI;
+                gesture[2][0] += deviation * Math.cos(angle);
+                gesture[2][1] += deviation * Math.sin(angle);
+            });
+        }
+        return gestures;
+    }
 
     /**
      * @brief 播放线程函数
@@ -1445,35 +1900,31 @@ function AutoJsGesturePlayer() {
                 case PlayerStates.FINISHED:
                 case PlayerStates.UNINITIALIZED:
                 case PlayerStates.PAUSED: //(->SEEK_END)
-                    sleep(500); //循环等待状态变更
+                    sleep(500); //循环等待状态变更 
                     break;
                 case PlayerStates.SEEKING: //(->SEEK_END)
                     playerState = PlayerStates.SEEK_END;
                     sleep(500); //在这500ms内, 状态可能会变回SEEKING. 继续循环
                     break;
-                case PlayerStates.SEEK_END: {
-                    //(->PLAYING)
+                case PlayerStates.SEEK_END: { //(->PLAYING)
                     playerState = PlayerStates.PLAYING;
                     if (position == 0) {
                         startTimeAbs = new Date().getTime() + 100; //第一次播放, 从100ms前开始
                         break;
                     }
                     //设置播放起始时间
-                    let currentNoteTimeAbs =
-                        gestureTimeList[position][1] * 1000 * (1 / playSpeed);
+                    let currentNoteTimeAbs = gestureTimeList[position][1] * 1000 * (1 / playSpeed);
                     startTimeAbs = new Date().getTime() - currentNoteTimeAbs;
                     onPlayNote(position);
                     break;
                 }
-                case PlayerStates.PLAYING: {
-                    //(->PAUSED/FINISHED/SEEKING)
+                case PlayerStates.PLAYING: { //(->PAUSED/FINISHED/SEEKING)
                     if (position >= gestureTimeList.length) {
                         playerState = PlayerStates.FINISHED;
                         break;
                     }
                     let currentNote = gestureTimeList[position][0];
-                    let currentNoteTimeAbs =
-                        gestureTimeList[position][1] * 1000 * (1 / playSpeed);
+                    let currentNoteTimeAbs = gestureTimeList[position][1] * 1000 * (1 / playSpeed);
                     let elapsedTimeAbs = new Date().getTime() - startTimeAbs;
                     let delayTime = currentNoteTimeAbs - elapsedTimeAbs - 7; //7ms是手势执行时间
                     if (delayTime > 0) {
@@ -1489,12 +1940,9 @@ function AutoJsGesturePlayer() {
                         position++;
                         break;
                     }
-                    threads.start(function () {
-                        //播放
-                        gestures.apply(null, currentNote);
-                        position++;
-                        onPlayNote(position);
-                    });
+                    this.exec(currentNote);
+                    position++;
+                    onPlayNote(position);
                     break;
                 }
                 default:
@@ -1503,6 +1951,7 @@ function AutoJsGesturePlayer() {
         }
     }
 }
+
 function Players() {
     this.AutoJsGesturePlayer = AutoJsGesturePlayer;
 }
@@ -1531,7 +1980,7 @@ function getRandomInt(min, max) {
 function getMusicData(fileName, type) {
     let progressDialog = dialogs
         .build({
-            title: "加载中",
+            title: "加载中（长时间无反应请使用流量）",
             content: "正在加载谱子数据...",
             negative: "取消",
             progress: {
@@ -1612,19 +2061,14 @@ fm.addItem("搜索")
                         ofArr = MusicArr.indexOf(spiltData[0]);
                         datajson = domArr[ofArr];
                         let Musicdata = getMusicData(datajson.name, datajson.music_type);
-                        let data = loadMusicFile(datajson, Musicdata, false);
+                        let data = loadMusicFile(datajson, Musicdata, ScoreExportType.none);
                         if (data == null || Musicdata == null) {
                             return;
                         }
                         totalTimeSec = data[data.length - 1][1];
                         player.setGestureTimeList(data);
                         isCollect = false;
-                        main(
-                            datajson,
-                            datajson.name,
-                            data,
-                            totalTimeSec
-                        );
+                        main(data, totalTimeSec);
                     }
                 } else {
                     toastLog("没有搜到乐谱，请检查是否输入正确");
@@ -1665,19 +2109,14 @@ fm.addItem("收藏")
                 ofArr = MusicArr.indexOf(spiltData[0]);
                 datajson = domArr[ofArr];
                 let Musicdata = getMusicData(datajson.name, datajson.music_type);
-                let data = loadMusicFile(datajson, Musicdata, false);
+                let data = loadMusicFile(datajson, Musicdata, ScoreExportType.none);
                 if (data == null || Musicdata == null) {
                     return;
                 }
                 totalTimeSec = data[data.length - 1][1];
                 player.setGestureTimeList(data);
                 isCollect = true;
-                main(
-                    datajson,
-                    datajson.name,
-                    data,
-                    totalTimeSec
-                );
+                main(data, totalTimeSec);
             }
         });
         return false;
@@ -1710,19 +2149,14 @@ fm.addItem("云端")
                 ofArr = MusicArr.indexOf(spiltData[0]);
                 datajson = domArr[ofArr];
                 let Musicdata = getMusicData(datajson.name, datajson.music_type);
-                let data = loadMusicFile(datajson, Musicdata, false);
+                let data = loadMusicFile(datajson, Musicdata, ScoreExportType.none);
                 if (data == null || Musicdata == null) {
                     return;
                 }
                 totalTimeSec = data[data.length - 1][1];
                 player.setGestureTimeList(data);
                 isCollect = false;
-                main(
-                    datajson,
-                    datajson.name,
-                    data,
-                    totalTimeSec
-                );
+                main(data, totalTimeSec);
             }
         });
         return false;
@@ -1765,9 +2199,11 @@ function findall(a, x) {
 function runGlobalSetup() {
     let dia = dialogs.select("设置列表", [
         "选择游戏/乐器",
-        "跳过空白部分",
-        "伪装手弹模式",
-        "乐谱可视化",
+        "跳过空白部分 (不想等那么久)",
+        "伪装手弹模式 (我不是自动弹琴)",
+        "乐谱可视化 (可以看到弹奏的键位)",
+        "长音模式 (适配笛子、小提琴等)",
+        "关闭悬浮球 (结束不玩了)"
     ]);
     switch (dia) {
         case -1:
@@ -1839,6 +2275,7 @@ function runGlobalSetup() {
                 "skipBlank5s",
                 dialogs.select("是否跳过乐曲中间超过5秒的空白?", ["否", "是"])
             );
+            toastLog("设置已保存");
             break;
         case 2: //设置自定义坐标
             let humanifyEnabled = readGlobalConfig("humanifyEnabled", false);
@@ -1858,11 +2295,13 @@ function runGlobalSetup() {
                     setGlobalConfig("humanifyEnabled", true);
                     setupFinished = true;
                     dial.dismiss();
+                    toastLog("伪装手弹模式已开启");
                 })
                 .on("negative", () => {
                     setGlobalConfig("humanifyEnabled", false);
                     setupFinished = true;
                     dial.dismiss();
+                    toastLog("伪装手弹模式已关闭");
                 })
                 .on("neutral", () => {
                     enterDetailedSetup = true;
@@ -1900,7 +2339,43 @@ function runGlobalSetup() {
                 "是否要开启乐谱可视化?"
             );
             setGlobalConfig("visualizerEnabled", visualizerEnabled);
-            log(visualizerEnabled);
+            if (visualizerEnabled) {
+                toastLog("乐谱可视化已开启");
+            } else {
+                toastLog("乐谱可视化已关闭");
+            }
+            break;
+        case 4: //长音模式
+            let setupFinisheds = false;
+            let notedia = dialogs.build({
+                title: "长音模式",
+                content: "要开启长音模式吗？此功能仅支持MID谱，TXT谱无效果",
+                positive: "开启",
+                negative: "关闭",
+                cancelable: true,
+                canceledOnTouchOutside: false,
+            }).on("positive", () => {
+                setGlobalConfig("noteDurationOutputMode", "native");
+                setupFinisheds = true;
+                notedia.dismiss();
+                toastLog("长音模式已开启");
+            }).on("negative", () => {
+                setGlobalConfig("noteDurationOutputMode", "none");
+                setupFinisheds = true;
+                notedia.dismiss();
+                toastLog("长音模式已关闭");
+            }).show();
+            while (!setupFinisheds) {
+                sleep(100);
+            }
+            break;
+        case 5: //结束悬浮窗
+            confirm("关闭悬浮窗", "你确定关闭悬浮窗吗？你不玩了吗？你不爱我了吗？", (clear) => {
+                if (clear) {
+                    toastLog("被你丢弃");
+                    engines.stopAll();
+                }
+            });
             break;
     }
 }
@@ -1927,7 +2402,7 @@ function loadMusicFile(MusicName, musicdata, exportScore) {
     let progressDialog = dialogs
         .build({
             title: "加载中",
-            content: "正在解析文件...",
+            content: "正在解析曲谱...",
             negative: "取消",
             progress: {
                 max: 100,
@@ -1949,61 +2424,50 @@ function loadMusicFile(MusicName, musicdata, exportScore) {
         return null;
     }
 
-    let humanifyEnabled = readGlobalConfig("humanifyEnabled", false);
-    let majorPitchOffset = readFileConfig("majorPitchOffset", MusicName, 0);
-    let minorPitchOffset = readFileConfig("minorPitchOffset", MusicName, 0);
+    let humanifyNoteAbsTimeStdDev = readGlobalConfig("humanifyNoteAbsTimeStdDev", 0);
+    let majorPitchOffset = readFileConfigForTarget("majorPitchOffset", MusicName, gameProfile, 0);
+    let minorPitchOffset = readFileConfigForTarget("minorPitchOffset", MusicName, gameProfile, 0);
     let treatHalfAsCeiling = readFileConfig("halfCeiling", MusicName, false);
     let limitClickSpeedHz = readFileConfig("limitClickSpeedHz", MusicName, 0);
-    let speedMultiplier = readFileConfig("speedMultiplier", MusicName, 1);
+    let noteDurationOutputMode = readGlobalConfig("noteDurationOutputMode", "none");
+    let maxGestureDuration = readGlobalConfig("maxGestureDuration", 8000);
+    let marginDuration = readGlobalConfig("marginDuration", 100);
     let defaultClickDuration = readGlobalConfig("defaultClickDuration", 5);
-    let mergeThreshold = exportScore
-        ? scoreExportMergeThreshold
-        : autoPlayMergeThreshold;
+    let chordLimitEnabled = readFileConfig("chordLimitEnabled", MusicName, false);
+    let maxSimultaneousNoteCount = readFileConfig("maxSimultaneousNoteCount", MusicName, 2);
+    let noteCountLimitMode = readFileConfig("noteCountLimitMode", MusicName, "split");
+    let noteCountLimitSplitDelay = readFileConfig("noteCountLimitSplitDelay", MusicName, 75);
+    let chordSelectMode = readFileConfig("chordSelectMode", MusicName, "high");
+    let mergeThreshold = (exportScore == ScoreExportType.keyboardScore ? scoreExportMergeThreshold : autoPlayMergeThreshold);
     let keyRange = gameProfile.getKeyRange();
     const passManager = new PassManager();
     /////////////解析文件
-    progressDialog.setContent("正在解析文件2...");
+    progressDialog.setContent("正在解析曲谱...");
     if (MusicName.music_type == "mid") {
         tracksData = JSON.parse(musicdata);
     } else {
-        tracksData = passManager
-            .addPass(
-                "ParseSourceFilePass",
-                musicdata,
-                null,
-                (data, statistics, elapsedTime) => {
-                    // console.log("解析文件耗时" + elapsedTime / 1000 + "秒");
-                    if (debugDumpPass.indexOf("parse") != -1) debugDump(data, "parse");
-                }
-            )
-            .run(MusicName);
+        tracksData = SkyStudioJSONParser(musicdata);
     }
     passManager.reset();
 
-    /////////////选择音轨
+    //选择音轨
     progressDialog.setContent("正在解析音轨...");
     let noteData = [];
     if (tracksData.haveMultipleTrack) {
         //删除没有音符的音轨
         tracksData = removeEmptyTracks(tracksData);
         let nonEmptyTrackCount = tracksData.tracks.length;
-
-        //上次选择的音轨(包括空音轨)
-        // let lastSelectedTracksNonEmpty = readFileConfig(
-        //     "lastSelectedTracksNonEmpty",
-        //     rawFileName
-        // );
-        // if (typeof lastSelectedTracksNonEmpty == "undefined") {
         let lastSelectedTracksNonEmpty = [];
         for (let i = 0; i < nonEmptyTrackCount; i++) {
             lastSelectedTracksNonEmpty.push(i); //默认选择所有音轨
         }
-        // }
         let selectedTracksNonEmpty = lastSelectedTracksNonEmpty;
-        // console.log("选择的音轨:" + JSON.stringify(selectedTracksNonEmpty));
         //合并
         for (let i = 0; i < selectedTracksNonEmpty.length; i++) {
+            if (selectedTracksNonEmpty[i] >= nonEmptyTrackCount) continue;
             let track = tracksData.tracks[selectedTracksNonEmpty[i]];
+            //通道10(打击乐) 永远不会被合并
+            if (track.channel === 9) continue;
             noteData = noteData.concat(track.notes);
         }
         //按时间排序
@@ -2014,22 +2478,17 @@ function loadMusicFile(MusicName, musicdata, exportScore) {
         noteData = tracksData.tracks[0].notes;
     }
 
-    //一些统计信息
-    // let finalNoteCnt = 0, inputNoteCnt = 0, overFlowedNoteCnt = 0, underFlowedNoteCnt = 0, roundedNoteCnt = 0, droppedNoteCnt = 0;
     inputNoteCnt = noteData.length;
 
     progressDialog.setContent("正在伪装手弹...");
     //伪装手弹
-    passManager.addPass(
-        humanifyEnabled ? "HumanifyPass" : "NopPass",
-        {
-            noteAbsTimeStdDev: readGlobalConfig("humanifyNoteAbsTimeStdDev", 50),
-        },
-        null,
-        () => {
+    if (humanifyNoteAbsTimeStdDev > 0) {
+        passManager.addPass("HumanifyPass", {
+            noteAbsTimeStdDev: humanifyNoteAbsTimeStdDev
+        }, null, () => {
             progressDialog.setContent("正在生成按键...");
-        }
-    );
+        });
+    }
     //生成按键
     passManager.addPass(
         "NoteToKeyPass",
@@ -2072,43 +2531,51 @@ function loadMusicFile(MusicName, musicdata, exportScore) {
     if (readGlobalConfig("skipBlank5s", true)) {
         passManager.addPass("LimitBlankDurationPass"); //默认5秒
     }
-
     //合并按键
-    passManager.addPass(
-        "MergeKeyPass",
-        {
-            maxInterval: mergeThreshold * 1000,
-        },
-        null,
-        (data, statistics, elapsedTime) => {
-            // console.log("合并按键耗时" + elapsedTime / 1000 + "秒");
-            visualizer.setKeyLayout(
-                gameProfile.getKeyLayout().row,
-                gameProfile.getKeyLayout().column
-            );
-            visualizer.loadNoteData(data);
-            visualizer.goto(-1);
-            progressDialog.setContent("正在生成手势...");
-        }
-    );
+    passManager.addPass("MergeKeyPass", {
+        maxInterval: mergeThreshold * 1000,
+    }, null, (data, statistics, elapsedTime) => {
+        // console.log("合并按键耗时" + elapsedTime / 1000 + "秒");
+        progressDialog.setContent("正在生成手势...");
+    });
     //限制按键频率
     if (limitClickSpeedHz != 0) {
         passManager.addPass("NoteFrequencySoftLimitPass", {
             minInterval: 1000 / limitClickSpeedHz,
         });
     }
+    //限制同时按键个数
+    if (chordLimitEnabled) {
+        passManager.addPass("ChordNoteCountLimitPass", {
+            maxNoteCount: maxSimultaneousNoteCount,
+            limitMode: noteCountLimitMode,
+            splitDelay: noteCountLimitSplitDelay,
+            selectMode: chordSelectMode,
+        }, null, (data, statistics, elapsedTime) => {
+            progressDialog.setContent("正在生成手势...");
+        });
+    }
 
-    if (exportScore) {
+    if (exportScore != ScoreExportType.none) {
         //如果是导出乐谱,则不需要生成手势
         let data = passManager.run(noteData);
         progressDialog.dismiss();
-        return data;
+        return noteUtils.packNotes(data);
     }
+    //加载可视化窗口
+    passManager.addPass("NopPass", null, null, (data, statistics, elapsedTime) => {
+        visualizer.setKeyLayout(gameProfile.getKeyLayout().row, gameProfile.getKeyLayout().column);
+        visualizer.loadNoteData(noteUtils.packNotes(data));
+        visualizer.goto(-1);
+    });
     //生成手势
     passManager.addPass(
         "KeyToGesturePass",
         {
             currentGameProfile: gameProfile,
+            durationMode: noteDurationOutputMode,
+            maxGestureDuration: maxGestureDuration,
+            marginDuration: marginDuration,
             pressDuration: defaultClickDuration,
         },
         null,
@@ -2122,7 +2589,7 @@ function loadMusicFile(MusicName, musicdata, exportScore) {
     return gestureTimeList;
 }
 
-function main(musicData, musicName, musicFileDatas, totalTimeSecr) {
+function main(musicFileDatas, totalTimeSecr) {
     let evt = events.emitter(threads.currentThread());
     let musicFileData = musicFileDatas;
     let MusicDataList = Qiu.inspect.get("MusicData");
@@ -2318,6 +2785,11 @@ function main(musicData, musicName, musicFileDatas, totalTimeSecr) {
                         id="timerText"
                         textStyle="bold"
                     />
+                    <text
+                        text="©解析/弹奏由clxTools提供"
+                        textSize="8sp"
+                        gravity="center"
+                    />
                 </vertical>
             </card>
         </frame>
@@ -2325,7 +2797,7 @@ function main(musicData, musicName, musicFileDatas, totalTimeSecr) {
     ui.run(() => {
         //更新文字，toFixed只保留一位小数
         controlWindow.speed.setText("速度x" + player.getPlaySpeed().toFixed(1));
-        controlWindow.songName.setText(musicName);
+        controlWindow.songName.setText(datajson.name);
         controlWindow.songName.setSelected(true);
     });
     //切换上一首
@@ -2398,13 +2870,14 @@ function main(musicData, musicName, musicFileDatas, totalTimeSecr) {
     });
 
     //检查是否收藏
-    function jcax(musicName) {
+    function jcax() {
         let collectDataList = Qiu.inspect.get("Collection");
         threads.start(function () {
             let j = true;
             if (collectDataList !== null) {
                 for (let i = 0; i < collectDataList.length; i++) {
-                    if (collectDataList[i] == musicName) {
+                    let nameSp = collectDataList[i].split("@MID");
+                    if (nameSp[0] == datajson.name) {
                         ui.run(function () {
                             controlWindow.jrsc.setText(tu[3]);
                         });
@@ -2423,11 +2896,8 @@ function main(musicData, musicName, musicFileDatas, totalTimeSecr) {
             }
         });
     }
-    if (datajson.music_type == "mid") {
-        jcax(datajson.name + "@MID");
-    } else {
-        jcax(datajson.name);
-    }
+    jcax();
+
 
     //播放开关按钮
     controlWindow.pauseResumeBtn.click(() => {
@@ -2661,12 +3131,8 @@ function main(musicData, musicName, musicFileDatas, totalTimeSecr) {
             datajson = domArr[ofArr];
             Musicdata = getMusicData(MusicArr[ofArr], datajson.music_type);
         }
-        if (datajson.music_type == "mid") {
-            jcax(datajson.name + "@MID");
-        } else {
-            jcax(datajson.name);
-        }
-        let data = loadMusicFile(datajson, Musicdata, false);
+        jcax();
+        let data = loadMusicFile(datajson, Musicdata, ScoreExportType.none);
         if (data == null) {
             return;
         }
@@ -2846,6 +3312,7 @@ function getPosInteractive(promptText) {
                     style="Widget.AppCompat.Button.Colored"
                     text="取消"
                 />
+                <text text="©坐标获取由clxTools提供" gravity="center" textSize="8sp" />
             </vertical>
         </frame>
     );
