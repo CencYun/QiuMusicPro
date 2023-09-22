@@ -174,6 +174,47 @@ const noteKeyMaps = {
         "A5#": 35,
         "B5": 36,
     },
+    "mrzh_3x12": {
+        //C5 C#5 D5 D#5 E5 NC F5 F#5 G5 G#5 A5 A#5 B5
+        //C4 C#4 D4 D#4 E4 NC F4 F#4 G4 G#4 A4 A#4 B4
+        //C3 C#3 D3 D#3 E3 NC F3 F#3 G3 G#3 A3 A#3 B3
+        "C3": 1,
+        "C3#": 2,
+        "D3": 3,
+        "D3#": 4,
+        "E3": 5,
+        "F3": 7,
+        "F3#": 8,
+        "G3": 9,
+        "G3#": 10,
+        "A3": 11,
+        "A3#": 12,
+        "B3": 13,
+        "C4": 14,
+        "C4#": 15,
+        "D4": 16,
+        "D4#": 17,
+        "E4": 18,
+        "F4": 20,
+        "F4#": 21,
+        "G4": 22,
+        "G4#": 23,
+        "A4": 24,
+        "A4#": 25,
+        "B4": 26,
+        "C5": 27,
+        "C5#": 28,
+        "D5": 29,
+        "D5#": 30,
+        "E5": 31,
+        "F5": 33,
+        "F5#": 34,
+        "G5": 35,
+        "G5#": 36,
+        "A5": 37,
+        "A5#": 38,
+        "B5": 39,
+    },
     "nshm_1x7": {
         //C4 D4 E4 F4 G4 A4 B4
         "C4": 1,
@@ -450,7 +491,16 @@ const keyLayouts = {
         column: 7,
         relativeKeyPosition: undefined,
         noteKeyMap: noteKeyMaps.hpma_2x7,
-    }, //TODO: 明日之后?
+    },
+    "mrzh_3x12": {
+        displayName: "传统模式",
+        type: KeyLayoutTypes.grid,
+        locator: KeyLocatorTypes.left_top_right_bottom,
+        row: 3,
+        column: 13,
+        noteKeyMap: noteKeyMaps.mrzh_3x12,
+    },
+
 };
 
 /**
@@ -838,6 +888,47 @@ const PreDefinedGameConfigs = [
         sameKeyMinInterval: 20,
         packageNamePart: ["mole"],
     }),
+    new GameConfig({
+        gameType: "明日之后",
+        gameName: "明日之后",
+        keyTypes: ["mrzh_3x12"],
+        keyLocators: new Map([
+            ["mrzh_3x12", [[0, 0], [0, 0]]],
+        ]),
+        variants: [
+            defaultVariantConfig
+        ],
+        sameKeyMinInterval: 20,
+        packageNamePart: ["mrzh"],
+    }),
+    new GameConfig({
+        gameType: "自定义1",
+        gameName: "自定义1",
+        keyTypes: ["generic_3x7", "generic_3x12"],
+        keyLocators: new Map([
+            ["generic_3x7", [[0, 0], [0, 0]]],
+            ["generic_3x12", [[0, 0], [0, 0]]],
+        ]),
+        variants: [
+            defaultVariantConfig
+        ],
+        sameKeyMinInterval: 0,
+        packageNamePart: [],
+    }),
+    new GameConfig({
+        gameType: "自定义2",
+        gameName: "自定义2",
+        keyTypes: ["generic_3x7", "generic_3x12"],
+        keyLocators: new Map([
+            ["generic_3x7", [[0, 0], [0, 0]]],
+            ["generic_3x12", [[0, 0], [0, 0]]],
+        ]),
+        variants: [
+            defaultVariantConfig
+        ],
+        sameKeyMinInterval: 0,
+        packageNamePart: [],
+    }),
 ];
 
 
@@ -949,6 +1040,9 @@ function GameProfile() {
      * @returns {boolean} 是否设置成功
      */
     this.setConfigByPackageName = function (packageName) {
+        if (packageName == null || packageName == "") {
+            return false;
+        }
         //首先检查当前配置是否符合要求
         if (currentGameConfig != null) {
             for (let i = 0; i < currentGameConfig.packageNamePart.length; i++) {
@@ -1127,8 +1221,13 @@ function GameProfile() {
         // }
         return KeyType.displayName;
     }
+
     this.getCurrentKeyLayoutTypeName = function () {
         return currentKeyTypeName;
+    }
+
+    this.getProfileIdentifierTriple = function () {
+        return `${this.getCurrentConfigTypeName()}-${this.getCurrentKeyLayoutTypeName()}-${this.getCurrentVariantTypeName()}`;
     }
 
     /**
@@ -1383,7 +1482,7 @@ function GameProfile() {
     /**
      * 根据 MIDI 音高值获取对应的按键名。
      * @param {number} pitch - MIDI 音高值。
-     * @returns {number} MIDI 音高值对应的按键序号，从1开始，如果没有对应的按键则返回-1。
+     * @returns {number} MIDI 音高值对应的按键序号，从0开始，如果没有对应的按键则返回-1。
      */
     this.getKeyByPitch = function (pitch) {
         if (cachedPitchKeyMap == null) {
@@ -1393,7 +1492,7 @@ function GameProfile() {
         if (res === undefined) {
             return -1;
         }
-        return res;
+        return res - 1;
     }
 
     /**
@@ -1488,7 +1587,4 @@ function GameProfile() {
     }
 
 }
-
-console.info("GameProfile.js loaded");
-
 module.exports = GameProfile;
