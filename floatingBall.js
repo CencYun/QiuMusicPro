@@ -755,14 +755,15 @@ function main(musicInfo) {
                     throw new Error("未知的播放器类型: " + selectedPlayerTypes);
                 }
                 autoStartPlaying = true;
-                let offset = stor.get("gameConfig", "calibrateFullScreenCanvasOffset", null);
+                let offset = stor.get("gameConfig", "calibrateFullScreenCanvasOffset2", null);
                 if (offset == null) offset = calibrateFullScreenCanvasOffset();
                 let keyPositions = JSON.parse(JSON.stringify(gameProfile.getAllKeyPositions()));
-                for (let keyPos of keyPositions) {
-                    keyPos[0] -= offset[0];
-                    keyPos[1] -= offset[1];
-                }
+                // @Cenc修复刘海屏偏移 直接传入纯净的原始坐标，保证后续 findPointIndex 能够100%匹配成功
                 impl.setKeyPositions(keyPositions);
+                // @Cenc修复刘海屏偏移 将画布偏移量单独传给播放器实例处理
+                if (impl.setCanvasOffset) {
+                    impl.setCanvasOffset(offset);
+                }
                 impl.setKeyRadius(gameProfile.getPhysicalMinKeyDistance() * 0.3 * stor.get("gameConfig", "SimpleInstructPlayer_MarkSize", 1));
                 //创建全屏悬浮窗. 也许不需要全屏?
                 instructWindow = floaty.rawWindow(<canvas id="canv" w="*" h="*" />);

@@ -230,6 +230,7 @@ function saveUserGameProfile() {
  * @returns {import("../gameProfile").pos2dPair[] | null} 得到的定位点坐标, 如果终止操作则返回null
  */
 function calibrateLayout(promptText, normalizedPos, type) {
+    log(normalizedPos)
     if (type == null) {
         type = "LOCATOR_LEFT_TOP";
     }
@@ -241,12 +242,15 @@ function calibrateLayout(promptText, normalizedPos, type) {
 
     // 初始位置在屏幕1/4和3/4处
     let pos1 = [deviceWidth / 4, deviceHeight / 4];  // 左上
-    let pos2 = [deviceWidth * 3/4, deviceHeight * 3/4];  // 右下
-    
+    let pos2 = [deviceWidth * 3 / 4, deviceHeight * 3 / 4];  // 右下
+
     let dragging1 = false;
     let dragging2 = false;
     let confirmed = false;
     let aborted = false;  // 添加终止标志
+    // @Cenc修复坐标偏移 用于记录屏幕绝对坐标与画布相对坐标的偏差（刘海/黑边宽度）
+    let offset = [0, 0];
+    let offsetCalculated = false;
 
     // 全屏绘图窗口
     let fullScreenWindow = floaty.rawWindow(<canvas id="canv" w="*" h="*" />);
@@ -255,14 +259,24 @@ function calibrateLayout(promptText, normalizedPos, type) {
 
     // 触摸事件处理
     fullScreenWindow.canv.setOnTouchListener(function (v, evt) {
-        let x = parseInt(evt.getRawX());
-        let y = parseInt(evt.getRawY());
+
+        // @Cenc修复坐标偏移 在第一次触摸时，动态计算物理屏幕和画布的偏移量
+        if (!offsetCalculated && evt.getAction() == evt.ACTION_DOWN) {
+            offset[0] = parseInt(evt.getRawX() - evt.getX());
+            offset[1] = parseInt(evt.getRawY() - evt.getY());
+            offsetCalculated = true;
+        }
+
+        // @Cenc修复坐标偏移 将原来获取屏幕绝对坐标 (getRawX) 改为获取画布内部相对坐标 (getX)
+        // 这样无论有没有刘海屏、怎么翻转，手指触摸点和屏幕绘制点、hit-test 判定都能完美重合！
+        let x = parseInt(evt.getX());
+        let y = parseInt(evt.getY());
 
         if (evt.getAction() == evt.ACTION_DOWN) {
             // 检查是否点击了定位点
-            if (distance([x,y], pos1) < 50) {
+            if (distance([x, y], pos1) < 50) {
                 dragging1 = true;
-            } else if (distance([x,y], pos2) < 50) {
+            } else if (distance([x, y], pos2) < 50) {
                 dragging2 = true;
             }
         } else if (evt.getAction() == evt.ACTION_MOVE) {
@@ -290,7 +304,7 @@ function calibrateLayout(promptText, normalizedPos, type) {
         const Paint = android.graphics.Paint;
         const Color = android.graphics.Color;
         const PorterDuff = android.graphics.PorterDuff;
-        
+
         let paint = new Paint();
         canvas.drawColor(Color.parseColor("#3f000000"), PorterDuff.Mode.SRC);
 
@@ -312,23 +326,23 @@ function calibrateLayout(promptText, normalizedPos, type) {
         );
 
         // 画两个定位点
-        let drawLocatorPoint = function(x, y, text) {
+        let drawLocatorPoint = function (x, y, text) {
             // 黑色外圈
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(5);
             paint.setARGB(255, 0, 0, 0);
             canvas.drawCircle(x, y, 32, paint);
-            
+
             // 黄色中圈
             paint.setStrokeWidth(3);
             paint.setARGB(255, 255, 255, 0);
             canvas.drawCircle(x, y, 30, paint);
-            
+
             // 黑色内圈
             paint.setStyle(Paint.Style.FILL);
             paint.setARGB(255, 0, 0, 0);
             canvas.drawCircle(x, y, 22, paint);
-            
+
             // 黄色填充
             paint.setARGB(180, 255, 255, 0);
             canvas.drawCircle(x, y, 20, paint);
@@ -339,18 +353,18 @@ function calibrateLayout(promptText, normalizedPos, type) {
             paint.setStrokeWidth(4);
             paint.setARGB(255, 0, 0, 0);
             canvas.drawText(text, x - 40, y - 40, paint);
-            
+
             // 文字白色填充
             paint.setStyle(Paint.Style.FILL);
             paint.setARGB(255, 255, 255, 255);
             canvas.drawText(text, x - 40, y - 40, paint);
         };
 
-        drawLocatorPoint(pos1[0], pos1[1], "左上");
-        drawLocatorPoint(pos2[0], pos2[1], "右下");
+        drawLocatorPoint(pos1[0], pos1[1], "拖拽点");
+        drawLocatorPoint(pos2[0], pos2[1], "拖拽点");
 
         // 画参考点
-        let drawReferencePoint = function(x, y, index) {
+        let drawReferencePoint = function (x, y, index) {
             // 白色外圈十字
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(5);
@@ -358,31 +372,31 @@ function calibrateLayout(promptText, normalizedPos, type) {
             let size = 15;
             canvas.drawLine(x - size - 2, y, x + size + 2, y, paint);
             canvas.drawLine(x, y - size - 2, x, y + size + 2, paint);
-            
+
             // 蓝色内圈十字
             paint.setStrokeWidth(3);
             paint.setARGB(255, 50, 50, 255);
             canvas.drawLine(x - size, y, x + size, y, paint);
             canvas.drawLine(x, y - size, x, y + size, paint);
-            
+
             // 白色外圈
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(3);
             paint.setARGB(255, 255, 255, 255);
             canvas.drawCircle(x, y, 7, paint);
-            
+
             // 蓝色填充
             paint.setStyle(Paint.Style.FILL);
             paint.setARGB(255, 50, 50, 255);
             canvas.drawCircle(x, y, 5, paint);
-            
+
             // 序号黑色描边
             paint.setTextSize(25);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(4);
             paint.setARGB(255, 0, 0, 0);
             canvas.drawText((index + 1).toString(), x + 15, y + 15, paint);
-            
+
             // 序号白色填充
             paint.setStyle(Paint.Style.FILL);
             paint.setARGB(255, 255, 255, 255);
@@ -397,12 +411,12 @@ function calibrateLayout(promptText, normalizedPos, type) {
 
     // 提示和确认按钮窗口
     let confirmWindow = floaty.rawWindow(
-        <frame gravity="left|top">
-            <vertical bg="#7fffff7f">
+        <frame gravity="left|top" alpha="0.5">
+            <vertical bg="#FAFAFA">
                 <text id="promptText" text="" textSize="14sp" />
-                <button id="confirmBtn" style="Widget.AppCompat.Button.Colored" text="确定" />
-                <button id="resetBtn" style="Widget.AppCompat.Button.Colored" text="复原" />
-                <button id="abortBtn" style="Widget.AppCompat.Button.Colored" text="终止" />
+                <button id="confirmBtn" text="确定" />
+                <button id="resetBtn" text="复原" />
+                <button id="abortBtn" text="终止" />
             </vertical>
         </frame>
     );
@@ -418,7 +432,7 @@ function calibrateLayout(promptText, normalizedPos, type) {
         confirmWindow.resetBtn.click(() => {
             // 重置位置
             pos1 = [deviceWidth / 4, deviceHeight / 4];
-            pos2 = [deviceWidth * 3/4, deviceHeight * 3/4];
+            pos2 = [deviceWidth * 3 / 4, deviceHeight * 3 / 4];
         });
         confirmWindow.abortBtn.click(() => {
             // 终止校准
@@ -440,7 +454,12 @@ function calibrateLayout(promptText, normalizedPos, type) {
         return null;
     }
 
-    return [pos1, pos2];
+    // @Cenc修复坐标偏移 最终返回给系统去"模拟点击"的必须是屏幕的物理绝对坐标
+    // 因此在返回前，我们要把刚才扣除的 offset (黑边/刘海宽度) 乖乖加回去！
+    return [
+        [pos1[0] + offset[0], pos1[1] + offset[1]],
+        [pos2[0] + offset[0], pos2[1] + offset[1]]
+    ];
 }
 // 计算两点距离
 function distance(p1, p2) {
