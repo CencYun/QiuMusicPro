@@ -1,7 +1,4 @@
 // instruct.js -- 教学/跟弹模式
-
-var noteUtils = require('./noteUtils.js');
-
 /**
  * 简单的跟弹模式. 在按键位置显示圆点, 按键时圆点变亮, 之后逐渐变暗最终消失.
  * @constructor
@@ -542,8 +539,4 @@ function SkyCotlLikeInstructPlayerImpl() {
             }
         }
     }
-}
-module.exports = {
-    SimpleInstructPlayerImpl,
-    SkyCotlLikeInstructPlayerImpl
 }

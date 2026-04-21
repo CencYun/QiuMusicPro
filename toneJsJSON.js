@@ -65,5 +65,3 @@ function ToneJsJSONParser() {
         };
     };
 }
-
-module.exports = ToneJsJSONParser;

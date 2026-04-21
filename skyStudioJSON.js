@@ -1,7 +1,6 @@
-
-function SkyStudioJSONParser(){
+function SkyStudioJSONParser() {
     //左上角为key0,右下角为key15,音高从C4到C6
-    this.skyKey2Midi =[
+    this.skyKey2Midi = [
         48, 50, 52, 53, 55,
         57, 59, 60, 62, 64,
         65, 67, 69, 71, 72,
@@ -12,10 +11,9 @@ function SkyStudioJSONParser(){
      * @param {string} musicData 音乐数据
      * @returns {import("../musicFormats.js").TracksData}
      */
-    this.parseFromString =  function(musicData){
-        let jsonData = JSON.parse(musicData);
-        jsonData = jsonData[0];
-        if(jsonData.isEncrypted){
+    this.parseFromString = function (musicData) {
+        let jsonData = musicData[0];
+        if (jsonData.isEncrypted) {
             throw new Error("文件已加密，无法解析！");
         }
 
@@ -27,8 +25,8 @@ function SkyStudioJSONParser(){
         let metaDataText = "乐曲名称: " + name + "\n" + "作者: " + author + "\n" + "转谱人: " + transcribedBy + "\n" + "isComposed: " + isComposed + "\n" + "BPM: " + bpm;
         let notes = jsonData.songNotes;
         /** @type {import("../noteUtils").Note[]} */
-        let ret =[];
-        for(let i = 0; i < notes.length; i++){
+        let ret = [];
+        for (let i = 0; i < notes.length; i++) {
             let n = notes[i];
             let key = parseInt(n.key.split("y")[1]); //"key"
             let pitch = this.skyKey2Midi[key];
@@ -78,4 +76,3 @@ function SkyStudioJSONParser(){
 
     }
 }
-module.exports = SkyStudioJSONParser;

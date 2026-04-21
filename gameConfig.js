@@ -1,5 +1,76 @@
-//@ts-check
-var midiPitch = require("./midiPitch.js");
+function MidiPitch() {
+    this.octaveArray = [
+        0, 2, 4, 5, 7, 9, 11
+    ];
+
+    /**
+     * 将音符名称转换为对应的 MIDI 音高值。
+     * @param {string} name - 要转换的音符名称，例如 C4、C4#、C#、C 等。
+     * @returns {number} 音符的 MIDI 音高值。
+     */
+    this.nameToMidiPitch = function (name) {
+        name = name.toUpperCase();
+        var pitch = {
+            'C': 0,
+            'D': 2,
+            'E': 4,
+            'F': 5,
+            'G': 7,
+            'A': 9,
+            'B': 11
+        };
+        var note = name[0];
+        switch (name.length) {
+            case 1: // eg. C
+                return pitch[note] + 12 * 5;
+            case 2: // eg. C5 | C# (alias for C5#)
+                if (name[1] === '#') {
+                    return pitch[note] + 12 * 5 + 1;
+                } else {
+                    return pitch[note] + 12 * 5 + 12 * (parseInt(name[1]) - 4);
+                }
+            case 3: // eg. C5#
+                return pitch[note] + 12 * 5 + 1 + 12 * (parseInt(name[1]) - 4);
+            default:
+                throw new Error('Invalid note name: ' + name);
+        }
+    }
+    /**
+     * 将 MIDI 音高值转换为对应的音符名称。
+     * @param {number} midiPitch - 要转换的 MIDI 音高值。
+     * @returns {string} 音符名称，例如 C4、C#4 等。
+     */
+    this.midiPitchToName = function (midiPitch) {
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const octave = Math.floor(midiPitch / 12) - 1;
+        const noteIndex = midiPitch % 12;
+        return noteNames[noteIndex] + octave;
+    }
+
+
+    /**
+     * 返回MIDI音高值是否是半音 (实际上, 黑键?)
+     * @param {number} pitch - MIDI音高值。
+     * @returns {boolean} 如果是半音则返回true，否则返回false。
+     */
+    this.isHalf = function (pitch) {
+        return pitch % 12 === 1 || pitch % 12 === 3 || pitch % 12 === 6 || pitch % 12 === 8 || pitch % 12 === 10;
+    }
+
+    /**
+     * 移调: 获取移调值对应的调号(0 -> 'C')
+     * @param {number} offset - 移调值。
+     * @returns {string} 移调值对应的调号。
+     */
+    this.getTranspositionEstimatedKey = function (offset) {
+        const transpositionName = [
+            'Ab', 'A', 'Bb', 'B', 'C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G'
+        ];
+        return transpositionName[(-offset + 4 + 12) % 12]; //反向...
+    };
+}
+
+var midiPitch = new MidiPitch();
 
 /**
  * @typedef {[number, number]} pos2d
@@ -281,11 +352,11 @@ function generateLayout(config) {
  *             [number, number, number]]>}
  */
 const transformMatrices = {
-   "centerFlipY": [
-       [1, 0, 0],
-       [0, -1, 1],
-       [0, 0, 1],
-   ]
+    "centerFlipY": [
+        [1, 0, 0],
+        [0, -1, 1],
+        [0, 0, 1],
+    ]
 }
 
 /**
@@ -373,8 +444,8 @@ const keyLayoutConfigs = {
         row: 3,
         column: 7,
         haveSemitone: false,
-        insertDummyKeys: [[1,0]],
-    },    
+        insertDummyKeys: [[1, 0]],
+    },
     "dzpd_7_8": {
         pitchRangeOrList: ["C4", "C6"],
         row: 2,
@@ -395,7 +466,7 @@ const keyLayoutConfigs = {
         column: 7,
         haveSemitone: false,
         rowLengthOverride: [[2, 8]],
-        insertDummyKeys: [[0,7]],
+        insertDummyKeys: [[0, 7]],
     },
     "speedmobile_interleaved3x12_1": {
         pitchRangeOrList: ["C3", "C6"],
@@ -403,7 +474,7 @@ const keyLayoutConfigs = {
         column: 12,
         haveSemitone: true,
         semiToneHeightOffset: 0,
-        insertDummyKeys: [[0,12]],
+        insertDummyKeys: [[0, 12]],
     },
     "abd_7_8_7": {
         pitchRangeOrList: ["C3", "C6"],
@@ -533,7 +604,7 @@ const keyLayoutConfigs = {
         row: 3,
         column: 7,
         haveSemitone: false,
-        insertDummyKeys: [[1,7]],
+        insertDummyKeys: [[1, 7]],
     },
     "qrsj_piano24": {
         pitchRangeOrList: ["C4", "B5"],
@@ -610,6 +681,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "楚留香",
         gameName: "楚留香",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/01466a3b165574dc59679843bd0719838d25ef362",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "3x7",
@@ -624,9 +696,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 200,
         packageNamePart: ["wyclx"],
-    },{
+    }, {
         gameType: "天涯明月刀",
         gameName: "天涯明月刀",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0d04883988af94bc2baa6ff139c529451ebff43fd",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "3x7",
@@ -637,9 +710,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 100,
         packageNamePart: ["tmgp.wuxia"],
-    },{
+    }, {
         gameType: "原神",
         gameName: "原神",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/03af51d42afa84a7fbb994ed935b5c6e3a2e5e4d5",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "3x7",
@@ -678,9 +752,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["genshin", "yuanshen", "ys.x"],
-    },{
+    }, {
         gameType: "光遇",
         gameName: "光遇",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0176a542940a042410ca73312999c819b0865f989",
         keyTypes: [{
             name: "sky_3x5",
             displayName: "3x5",
@@ -691,13 +766,14 @@ const PreDefinedGameConfigs = [
             keyLayout: keyLayoutConfigs.sky_2x4,
         }],
         variants: [
-           defaultVariantConfig
+            defaultVariantConfig
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["sky"],
-    },{
+    }, {
         gameType: "逆水寒手游",
         gameName: "逆水寒",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0fc9f640af53b4a85af13df0001a774135521924c",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "3x7",
@@ -739,12 +815,13 @@ const PreDefinedGameConfigs = [
     }, {
         gameType: "蛋仔派对",
         gameName: "蛋仔派对",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/04b0fe36bec794a2c9b9323886187a692ffc8636f",
         keyTypes: [
             {
                 name: "dzpd_7_8",
                 displayName: "15键",
                 keyLayout: keyLayoutConfigs.dzpd_7_8,
-            },{
+            }, {
                 name: "dzpd_interleaved3x7",
                 displayName: "21键",
                 keyLayout: keyLayoutConfigs.dzpd_interleaved3x7,
@@ -763,6 +840,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "永劫无间",
         gameName: "永劫无间",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/01112ba654ecd4789abef2e90f24625a54a510a96",
         keyTypes: [{
             name: "yjwj_curved3x7",
             displayName: "3x7",
@@ -779,22 +857,24 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["netease.l22"],
-    },{
+    }, {
         gameType: "黎明觉醒",
         gameName: "黎明觉醒",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0b8433860e7c54676866ae1822cb29197f62388b9",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "3x7",
             keyLayout: keyLayoutConfigs.generic_3x7,
         }],  //TODO: 钢琴 + 音域切换按钮
         variants: [
-            defaultVariantConfig 
+            defaultVariantConfig
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["toaa"],
-    },{
+    }, {
         gameType: "奥比岛",
         gameName: "奥比岛",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0d97629d7a1654c31bfddf43131612b8027fbbe32",
         keyTypes: [{
             name: "abd_7_8_7",
             displayName: "22键",
@@ -809,9 +889,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["aobi"],
-    },{
+    }, {
         gameType: "哈利波特_魔法觉醒",
         gameName: "哈利波特: 魔法觉醒",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0fae59bd4d562419f8fcbe5bee28c99eead26c87b",
         keyTypes: [{
             name: "hpma_yinterleaved3x12",
             displayName: "36键",
@@ -826,9 +907,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["harrypotter"],
-    },{
+    }, {
         gameType: "第五人格",
         gameName: "第五人格",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/097c64940d8b44d82841fc2765662d7a9eeaa8f0a",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "21键",
@@ -849,9 +931,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["dwrg"],
-    },{
+    }, {
         gameType: "阴阳师",
         gameName: "阴阳师",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/00139fdd968cd46ae9c2600925603a21778662ba6",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "3x7",
@@ -862,9 +945,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["onmyoji"],
-    },{
+    }, {
         gameType: "摩尔庄园",
         gameName: "摩尔庄园",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/05c861ffd2c1a4e8d856ec3abe639bd5a61510704",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "21键",
@@ -879,9 +963,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["mole"],
-    },{
+    }, {
         gameType: "明日之后",
         gameName: "明日之后",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/054b01f424c45410980b5d63599e49ed8ac2e27de",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "21键",
@@ -902,9 +987,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["mrzh"],
-    },{
+    }, {
         gameType: "元梦之星",
         gameName: "元梦之星",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0a32c1c4f21ea430d874cb87ec59b46659e67b0f3",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "3x7",
@@ -927,9 +1013,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: ["com.tencent.letsgo"],
-    },{
+    }, {
         gameType: "心动小镇",
         gameName: "心动小镇",
+        icon: "https://img.tapimg.com/market/images/eadbf5960004e040cf7d351a9480eee4.jpg/appicon_m?t=1",
         //双排15键, 三排15键, 22键, 22键+半音
         keyTypes: [{
             name: "dzpd_7_8",
@@ -953,9 +1040,10 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 20,
         packageNamePart: [], //TODO:
-    },{
+    }, {
         gameType: "射雕英雄传",
         gameName: "射雕英雄传",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0d0cf5ba4b3e42298f7bd3e13981999c3824219a0",
         keyTypes: [{
             name: "generic_3x7",
             displayName: "3x7",
@@ -977,12 +1065,13 @@ const PreDefinedGameConfigs = [
             },
         ],
         sameKeyMinInterval: 20,
-        packageNamePart: ["sdyxz"], 
+        packageNamePart: ["sdyxz"],
     },
     //qq飞车
     {
         gameType: "qq飞车",
         gameName: "qq飞车",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0928cd09f04ba41c59a4daa38415c610538305fb1",
         keyTypes: [{
             name: "speedmobile_interleaved3x7_1",
             displayName: "22键",
@@ -1002,6 +1091,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "创造与魔法",
         gameName: "创造与魔法",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/01f6fbbad2416407eb0ae43f48a472b8d7c16b1c1",
         keyTypes: [{
             name: "sky_3x5",
             displayName: "3x5",
@@ -1017,6 +1107,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "妄想山海",
         gameName: "妄想山海",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/02a7669bea3aa4bf8bc2a5205993f25c681836b9e",
         keyTypes: [
             {
                 name: "generic_piano36",
@@ -1037,6 +1128,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "星球重启",
         gameName: "星球:重启",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0c73334a109a14c199371b2c607e227ae022c9fce",
         keyTypes: [{
             name: "generic_piano88",
             displayName: "88键钢琴",
@@ -1056,6 +1148,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "荒野行动",
         gameName: "荒野行动",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/098cd6f99d8ca4094877eae9a41e7fedba6e9bfa4",
         keyTypes: [{
             name: "generic_piano88",
             displayName: "88键钢琴",
@@ -1071,6 +1164,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "我的世界",
         gameName: "我的世界",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/04a82eb0c67844cb4a7341b105c7cd4e585a052cc",
         keyTypes: [
             {
                 name: "generic_3x7",
@@ -1087,12 +1181,13 @@ const PreDefinedGameConfigs = [
             defaultVariantConfig
         ],
         sameKeyMinInterval: 20,
-        packageNamePart: ["netease.mc","netease.x19"],
+        packageNamePart: ["netease.mc", "netease.x19"],
     },
     //迷你世界
     {
         gameType: "迷你世界",
         gameName: "迷你世界",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0d35c136196434d0caa5aacd2247deace21311d59",
         keyTypes: [
             {
                 name: "generic_3x7",
@@ -1115,9 +1210,10 @@ const PreDefinedGameConfigs = [
     {
         gameType: "猫和老鼠",
         gameName: "猫和老鼠",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0e1437b791c8a4e14b8c7a26e0118f2d54fa142eb",
         keyTypes: [
             {
-                name: "mhls_curved3x7", 
+                name: "mhls_curved3x7",
                 displayName: "21键",
                 keyLayout: keyLayoutConfigs.mhls_curved3x7, //最逆天的键位
             }
@@ -1132,6 +1228,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "宅时光",
         gameName: "宅时光",
+        icon: "https://img.tapimg.com/market/images/278d5fae0d16a9ab60d74ed08f0751f7.png/appicon?t=1",
         keyTypes: [
             {
                 name: "dzpd_yinterleaved36",
@@ -1149,6 +1246,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "剑网3",
         gameName: "剑网3",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/00f187f15f123499c949ea1913899d3ae4f49a5f9",
         keyTypes: [
             {
                 name: "mhls_curved3x7",
@@ -1170,6 +1268,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "以闪亮之名",
         gameName: "以闪亮之名",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0ec30963829ca44a08489fe57df1559e2f4a10df6",
         keyTypes: [
             {
                 name: "yslzm_piano20",
@@ -1186,6 +1285,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "桃源深处有人家",
         gameName: "桃源深处有人家",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/055e2ef6c91d443f88dadf1bab0253fba7cdfc91c",
         keyTypes: [
             {
                 name: "tysc_interleaved3x7",
@@ -1207,6 +1307,7 @@ const PreDefinedGameConfigs = [
     {
         gameType: "七日世界",
         gameName: "七日世界",
+        icon: "http://file.market.xiaomi.com/thumbnail/PNG/l114/AppStore/0d42e693a4d3b4528aa565f15712e1b3a4e0f3cd9",
         keyTypes: [
             {
                 name: "qrsj_piano24",
@@ -1241,7 +1342,7 @@ const PreDefinedGameConfigs = [
         ],
         sameKeyMinInterval: 0,
         packageNamePart: [],
-    },{
+    }, {
         gameType: "自定义2",
         gameName: "自定义2",
         keyTypes: [
@@ -1304,6 +1405,12 @@ function GameProfile() {
     var cachedKeyPos = null;
 
     /**
+     * @type {Array<pos2d>?}
+     * @description 按键归一化位置数组
+     */
+    var cachedNormalizationKeyPos = null;
+
+    /**
      * @type {Map<number,number>?}
      * @description midi音高到按键序号(1开始)的映射
      */
@@ -1363,12 +1470,28 @@ function GameProfile() {
     }
 
     /**
+     * @brief 获取游戏图标列表
+     * @returns {newArray[]} 游戏图标
+     */
+    this.getGameIcon = function () {
+        this.loadDefaultGameConfigs();
+        let newArray = [];
+        for (let i = 0; i < gameConfigs.length - 2; i++) {
+            newArray.push({
+                name: gameConfigs[i].gameType,
+                icon: gameConfigs[i].icon
+            });
+        }
+        return newArray;
+    }
+
+    /**
      * 根据包名设定当前配置
      * @param {string} packageName 包名
      * @returns {boolean} 是否设置成功
      */
     this.setConfigByPackageName = function (packageName) {
-        if(packageName == null || packageName == ""){
+        if (packageName == null || packageName == "") {
             return false;
         }
         //首先检查当前配置是否符合要求
@@ -1517,7 +1640,7 @@ function GameProfile() {
         if (currentGameConfig == undefined) {
             return;
         }
-        console.log(JSON.stringify(currentGameConfig));
+        // console.log(JSON.stringify(currentGameConfig));
         currentVariantType = currentGameConfig.variants[0].variantType;
     }
 
@@ -1575,7 +1698,7 @@ function GameProfile() {
      * @returns {KeyType|undefined} 当前键位类型
      */
     this.getCurrentKeyLayout = function () {
-        if(currentGameConfig == undefined){
+        if (currentGameConfig == undefined) {
             return undefined;
         }
         return currentGameConfig.keyTypes.find(function (keyType) {
@@ -1593,7 +1716,7 @@ function GameProfile() {
         if (currentGameConfig == undefined) {
             return false;
         }
-        if(keyLocators[currentGameTypeKeyTypeName] == undefined){
+        if (keyLocators[currentGameTypeKeyTypeName] == undefined) {
             keyLocators[currentGameTypeKeyTypeName] = {};
         }
         keyLocators[currentGameTypeKeyTypeName][KeyLocatorTypes.LOCATOR_LEFT_TOP] = pos1;
@@ -1613,9 +1736,9 @@ function GameProfile() {
             return false;
         }
         let keys = keyLocators[currentGameTypeKeyTypeName];
-        if (keys[KeyLocatorTypes.LOCATOR_LEFT_TOP][0] == 0 && 
-            keys[KeyLocatorTypes.LOCATOR_LEFT_TOP][1] == 0 && 
-            keys[KeyLocatorTypes.LOCATOR_RIGHT_BOTTOM][0] == 0 && 
+        if (keys[KeyLocatorTypes.LOCATOR_LEFT_TOP][0] == 0 &&
+            keys[KeyLocatorTypes.LOCATOR_LEFT_TOP][1] == 0 &&
+            keys[KeyLocatorTypes.LOCATOR_RIGHT_BOTTOM][0] == 0 &&
             keys[KeyLocatorTypes.LOCATOR_RIGHT_BOTTOM][1] == 0) {
             return false;
         }
@@ -1627,7 +1750,7 @@ function GameProfile() {
      * @param {boolean} [normalize] 是否使用归一化的坐标, 默认为false
      */
     this.loadLayout = function (normalize) {
-        if(normalize == undefined){
+        if (normalize == undefined) {
             normalize = false;
         }
         if (currentGameConfig == null) {
@@ -1664,22 +1787,25 @@ function GameProfile() {
             }
         }
         let noteKeyMapList = Object.entries(noteKeyMap);
-        console.verbose(`noteKeyMapList: ${JSON.stringify(noteKeyMapList)}`);
+        // console.verbose(`noteKeyMapList: ${JSON.stringify(noteKeyMapList)}`);
         //音高从低到高排序
         noteKeyMapList.sort(function (a, b) {
             return midiPitch.nameToMidiPitch(a[0]) - midiPitch.nameToMidiPitch(b[0]);
         });
 
-        cachedKeyPos = new Array();
+        // @Cenc 修复获取坐标后解析的第一首 cachedKeyPos还是归一化坐标 用cachedNormalizationKeyPos记录归一化坐标
+        cachedNormalizationKeyPos = new Array();
         for (let i = 0; i < noteKeyMapList.length; i++) {
-            cachedKeyPos.push(noteKeyMapList[i][1]);
+            cachedNormalizationKeyPos.push(noteKeyMapList[i][1]);
         }
 
-        //映射到左上-右下
+        // 映射到左上 - 右下
         if (!normalize) {
             if (!this.checkKeyPosition()) {
                 return;
             }
+            // @Cenc
+            cachedKeyPos = cachedNormalizationKeyPos;
             let locator = this.getKeyLocators()[currentGameTypeKeyTypeName];
             let leftTop = locator[KeyLocatorTypes.LOCATOR_LEFT_TOP];
             let rightBottom = locator[KeyLocatorTypes.LOCATOR_RIGHT_BOTTOM];
@@ -1694,8 +1820,8 @@ function GameProfile() {
         for (let i = 0; i < noteKeyMapList.length; i++) {
             cachedPitchKeyMap.set(midiPitch.nameToMidiPitch(noteKeyMapList[i][0]), i + 1);
         }
-        console.verbose(`cachedKeyPos: ${JSON.stringify(cachedKeyPos)}`);
-        console.verbose(`cachedPitchKeyMap: ${JSON.stringify(Object.fromEntries(cachedPitchKeyMap))}`);
+        // console.verbose(`cachedKeyPos: ${JSON.stringify(cachedKeyPos)}`);
+        // console.verbose(`cachedPitchKeyMap: ${JSON.stringify(Object.fromEntries(cachedPitchKeyMap))}`);
     }
 
     /**
@@ -1730,7 +1856,7 @@ function GameProfile() {
     this.getNormalizedKeyPositions = function () {
         this.loadLayout(true);
         //@ts-ignore
-        return cachedKeyPos;
+        return cachedNormalizationKeyPos;
     }
 
     /**
@@ -1769,7 +1895,7 @@ function GameProfile() {
         // If no matching pitch is found, return -1
         return -1;
     }
-    
+
     /**
      * 获取按键范围。
      * @returns {[number,number]} 按键范围，第一个元素为最小按键序号，第二个元素为最大按键序号。从1开始。
@@ -1838,7 +1964,7 @@ function GameProfile() {
         if (cachedKeyPos == null) {
             this.loadLayout();
         }
-        if(!cachedKeyPos){
+        if (!cachedKeyPos) {
             return [];
         }
         let keyPos = cachedKeyPos[key];
@@ -1865,7 +1991,7 @@ function GameProfile() {
         if (cachedKeyPos == null) {
             this.loadLayout();
         }
-        if(!cachedKeyPos){
+        if (!cachedKeyPos) {
             return 999999;
         }
         let minDistance = 999999;
@@ -1887,6 +2013,7 @@ function GameProfile() {
         cachedKeyPos = null;
         cachedPitchKeyMap = null;
         cachedNoteRange = null;
+        cachedNormalizationKeyPos = null;
     }
 
     /**
@@ -1903,12 +2030,10 @@ function GameProfile() {
             return `光遇: 建议演奏位置: ${skyTuneMapPosition[key]}`;
         }
         if (currentGameConfig.gameType === "逆水寒手游") {
-            return `逆水寒手游: 建议选择调式: ${key}`;       
+            return `逆水寒手游: 建议选择调式: ${key}`;
         }
         return "";
     }
 }
 
-
-
-module.exports = GameProfile;
+let gameProfile = new GameProfile();

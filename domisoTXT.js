@@ -1,5 +1,4 @@
 // 格式设计者为 nigh@github.com , 参见 https://github.com/Nigh/DoMiSo-genshin
-var MidiPitch = require('../midiPitch.js');
 
 let basePitch = 60; //C5
 let defaultBPM = 80;
@@ -21,10 +20,10 @@ bpm=120
 没有规定速度时，默认bpm=80
 */
 
-function parseCmd(cmdStr){
+function parseCmd(cmdStr) {
     let cmd = cmdStr.split('=')[0];
     let param = cmdStr.split('=')[1];
-    switch(cmd){
+    switch (cmd) {
         case '1':
             basePitch = MidiPitch.nameToMidiPitch(param);
             console.log("Set basePitch:", basePitch);
@@ -35,7 +34,7 @@ function parseCmd(cmdStr){
             if (BPM2 < 1 || BPM2 > 480) {
                 BPM = defaultBPM;
                 tickTimems = 60 * 1000 / BPM
-            }else {
+            } else {
                 BPM = BPM2;
                 tickTimems = 60 * 1000 / BPM
             }
@@ -50,44 +49,44 @@ function parseCmd(cmdStr){
 };
 
 
-function parseNote(noteStr){
+function parseNote(noteStr) {
     //split by the only number in it
     let pitchStr = noteStr.split(/\d/)[0].trim();
     let timingStr = noteStr.split(/\d/)[1].trim();
 
 
     let pitch = basePitch;
-    
+
     //pitchStr 只可能是空, 一个或更多加号，或减号
-    if(pitchStr.length > 0){
-        if(pitchStr[0] === '+'){
+    if (pitchStr.length > 0) {
+        if (pitchStr[0] === '+') {
             pitch += 12 * pitchStr.length;
-        }else if(pitchStr[0] === '-'){
+        } else if (pitchStr[0] === '-') {
             pitch -= 12 * pitchStr.length;
-        }else{
+        } else {
             throw new Error('无效的音阶序号');
         }
     }
     let pitchNum = parseInt(noteStr[pitchStr.length]);
-    if (pitchNum < 0 || pitchNum > 8){
+    if (pitchNum < 0 || pitchNum > 8) {
         throw new Error('无效的音阶序号');
-    } 
-    if (pitchNum == 0){
+    }
+    if (pitchNum == 0) {
         pitch = -1;
-    }else{
+    } else {
         pitch += MidiPitch.octaveArray[pitchNum - 1];
     }
 
     let tickTime = 0;
     //timingStr 
-    if(timingStr.length == 0){
+    if (timingStr.length == 0) {
         tickTime = 1;
         //goto
-    }else{
-        if(timingStr[0] === '#'){
+    } else {
+        if (timingStr[0] === '#') {
             pitch += 1;
             timingStr = timingStr.substr(1);
-        }else if(timingStr[0] === 'b'){
+        } else if (timingStr[0] === 'b') {
             pitch -= 1;
             timingStr = timingStr.substr(1);
         };
@@ -112,43 +111,43 @@ function parseNote(noteStr){
                     timingStrPos++;
                     continue;
                 default:
-                    throw new Error('无效的时值'); 
+                    throw new Error('无效的时值');
             }
         }
-        tickTimeArr.forEach(function(item){
+        tickTimeArr.forEach(function (item) {
             tickTime += item;
         });
 
     }
     //console.log("str:" + noteStr + ";pitch:" + pitch + ";timing:" + tickTime);
     return {
-        "pitch" : pitch,
-        "tickTime" : tickTime
+        "pitch": pitch,
+        "tickTime": tickTime
     }
 
 }
 
-function DoMiSoTextParser(){
+function DoMiSoTextParser() {
     /**
      * @brief 从字符串中解析音乐数据
      * @param {string} musicData 音乐数据
      * @returns {import("../musicFormats.js").TracksData}
      */
-    this.parseFromString =  function(musicData){
+    this.parseFromString = function (musicData) {
         let lines = musicData.split('\n');
         //查找是否有注释分割线(两个连续等号)
         let commentLine = -1;
-        for(let i = 0; i < lines.length; i++){
-            if(lines[i].indexOf('==') != -1){
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].indexOf('==') != -1) {
                 commentLine = i;
                 break;
             }
         }
 
         let comment = '';
-        if(commentLine != -1){
-            let commentLines = lines.slice(0,commentLine);
-            commentLines.forEach(function(line){
+        if (commentLine != -1) {
+            let commentLines = lines.slice(0, commentLine);
+            commentLines.forEach(function (line) {
                 comment += line;
                 comment += '\n';
             });
@@ -156,33 +155,33 @@ function DoMiSoTextParser(){
             lines = lines.slice(commentLine + 1);
         }
 
-        
+
 
         //把剩下的行按空格分割
         let strs = [];
-        lines.forEach(function(line){
-            let ss =line.split(" ");
-            ss.forEach(function(s){
-                if(s.length > 0)
+        lines.forEach(function (line) {
+            let ss = line.split(" ");
+            ss.forEach(function (s) {
+                if (s.length > 0)
                     strs.push(s);
             });
         });
 
-        
+
         let curMsTime = 0;
 
         let chordPitchArr = [];
         let chordTickTime = 0;
         let inChord = false;
         let ret = [];
-        strs.forEach(function(s){
-            if(s === '('){
+        strs.forEach(function (s) {
+            if (s === '(') {
                 inChord = true;
                 return;
             }
-            if(s === ')'){
+            if (s === ')') {
                 inChord = false;
-                chordPitchArr.forEach(function(pitch){
+                chordPitchArr.forEach(function (pitch) {
                     ret.push([pitch, curMsTime, {}]);
                 });
                 curMsTime += chordTickTime * tickTimems;
@@ -192,25 +191,25 @@ function DoMiSoTextParser(){
             }
             // 判断是命令还是音符
             // 有等号的是命令
-            if(s.indexOf('=') != -1){
-                try{
+            if (s.indexOf('=') != -1) {
+                try {
                     parseCmd(s);
-                }catch(e){
+                } catch (e) {
                     throw new Error("解析命令" + s + "失败, " + e.message);
                 }
-            // 有数字的是音符
-            }else if(s.indexOf('0') != -1 || s.indexOf('1') != -1 || s.indexOf('2') != -1 || s.indexOf('3') != -1 || s.indexOf('4') != -1 || s.indexOf('5') != -1 || s.indexOf('6') != -1 || s.indexOf('7') != -1){
+                // 有数字的是音符
+            } else if (s.indexOf('0') != -1 || s.indexOf('1') != -1 || s.indexOf('2') != -1 || s.indexOf('3') != -1 || s.indexOf('4') != -1 || s.indexOf('5') != -1 || s.indexOf('6') != -1 || s.indexOf('7') != -1) {
                 let noteData;
-                try{
+                try {
                     noteData = parseNote(s);
-                }catch(e){
+                } catch (e) {
                     throw new Error("解析音符" + s + "失败, " + e.message);
                 }
-                if(inChord){
+                if (inChord) {
                     chordPitchArr.push(noteData.pitch);
                     chordTickTime = Math.max(chordTickTime, noteData.tickTime);
-                }else{
-                    if(noteData.pitch != -1) ret.push([noteData.pitch, curMsTime, {}]);
+                } else {
+                    if (noteData.pitch != -1) ret.push([noteData.pitch, curMsTime, {}]);
                     curMsTime += noteData.tickTime * tickTimems;
                 }
             }
@@ -243,40 +242,11 @@ function DoMiSoTextParser(){
      * @param {string} filePath 文件路径
      * @returns {import("../musicFormats.js").TracksData} 音乐数据
      */
-    this.parseFile = function(filePath,parserConfig){
+    this.parseFile = function (filePath, parserConfig) {
         try {
             return this.parseFromString(files.read(filePath));
         } catch (err) {
             throw new Error("文件解析失败！请检查格式是否正确, " + err.message);
         };
     }
-}
-
-module.exports = DoMiSoTextParser;
-
-if (require.main === module) {
-    const assert = require('assert');
-    // 测试用例
-
-    //5.. 的音符时值为 1+0.5+0.25 拍
-    assert.deepEqual(parseNote('5..'), {
-        "pitch": 65,
-        "tickTime": 1.75
-    });
-    console.log('测试用例1通过');
-
-    //++3b// 的音符时值为 0.25 拍
-    assert.deepEqual(parseNote('++3b//'), {
-        "pitch": 60 + 24 + 3 - 1,
-        "tickTime": 0.25
-    });
-    console.log('测试用例2通过');
-    
-    //-1#-/- 的音符时值即为 1+0.5+1 拍。
-    assert.deepEqual(parseNote('-1#-/-'), {
-        "pitch": 60 -12 + 1 + 1,
-        "tickTime": 2.5
-    });
-    console.log('测试用例3通过');
-
 }

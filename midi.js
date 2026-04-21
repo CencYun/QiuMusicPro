@@ -1,4 +1,3 @@
-
 function MidiParser() {
     /**
      * @brief 解析一个文件
@@ -8,7 +7,7 @@ function MidiParser() {
     this.parseFile = function (filePath) {
         // https://github.com/bhaeussermann/MidiReader
         // --MIT协议: https://mit-license.org/
-        let dexPath = files.cwd() + "/src/frontend/MidiReader.dex"
+        let dexPath = "./lib/MidiReader.dex"
         runtime.loadDex(dexPath);
 
         importPackage(Packages.midireader);
@@ -23,7 +22,7 @@ function MidiParser() {
             "name": "",
             "channel": 0,
             "trackIndex": 0,
-            "instrumentId": -1, 
+            "instrumentId": -1,
             "noteCount": 0,
             "notes": new Array()
         });
@@ -62,7 +61,7 @@ function MidiParser() {
                     continue;
                 }
                 tracks[trackIndex].push(event);
-            } else if (event instanceof StateChangeMidiEvent) {  
+            } else if (event instanceof StateChangeMidiEvent) {
                 switch (event.getStateChangeType()) {
                     case StateChangeMidiEvent.StateChangeType.PROGRAM_CHANGE: { //FIXME: 这些事件似乎会被不正确地吞掉, 导致乐器为-1
                         let channelNumber = event.getChannelNumber();
@@ -140,5 +139,3 @@ function MidiParser() {
         }
     }
 }
-
-module.exports = MidiParser;

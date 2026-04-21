@@ -1,5 +1,4 @@
-
-function Visualizer(){
+function Visualizer() {
 
     const mergeThreshold = 0.01; //秒, 和main.js中的值保持一致
 
@@ -19,7 +18,7 @@ function Visualizer(){
      * 加载乐曲数据
      * @param {Array<import("./noteUtils.js").PackedKey>} data 乐曲数据[[按键编号(从0开始),...], 所在时间[s]]
      */
-    this.loadNoteData = function(data){
+    this.loadNoteData = function (data) {
         mergedNoteData = data.slice();
     }
 
@@ -29,7 +28,7 @@ function Visualizer(){
      * @param {number} row_ 行数
      * @param {number} col_ 列数
      */
-    this.setKeyLayout = function(row_, col_){
+    this.setKeyLayout = function (row_, col_) {
         row = row_;
         col = col_;
     }
@@ -37,7 +36,7 @@ function Visualizer(){
     /**
      * 下一个按键
      */
-    this.next = function(){
+    this.next = function () {
         lastStep = step;
         step++;
     }
@@ -46,8 +45,8 @@ function Visualizer(){
      * 切换到指定按键
      * @param {number} step_ 序号
      */
-    this.goto = function(step_){
-        if (lastStep == step_ -1) {
+    this.goto = function (step_) {
+        if (lastStep == step_ - 1) {
             //如果是下一个按键, 直接next
             this.next();
             return;
@@ -62,7 +61,7 @@ function Visualizer(){
      * 绘制按键
      * @param {android.graphics.Canvas} canvas 画布
      */
-    this.drawKeys = function(canvas){
+    this.drawKeys = function (canvas) {
         let paint = new Paint(); //android.graphics.Paint
         paint.setStyle(Paint.Style.FILL);
         //计算board的大小 //长方形
@@ -75,12 +74,12 @@ function Visualizer(){
         let keySpacingX = boardWidth / (col + 1);
         let keySpacingY = boardHeight / (row + 1);
         let drawStep = Math.max(0, step);
- 
+
         //第一个board对应那一个按键
         let firstKeyIndex = Math.floor(drawStep / (boardRow * boardCol)) * boardRow * boardCol;
         //逐一绘制画面
-        for(let i = 0; i < boardRow; i++){
-            for(let j = 0; j < boardCol; j++){
+        for (let i = 0; i < boardRow; i++) {
+            for (let j = 0; j < boardCol; j++) {
                 //计算当前画面的位置
                 let x = j * boardWidth;
                 let y = i * boardHeight;
@@ -89,17 +88,18 @@ function Visualizer(){
                 let currentKeyIndex = firstKeyIndex + i * boardCol + j;
                 if (currentKeyIndex >= mergedNoteData.length) {
                     break;
-                }      
+                }
                 let currentKeys = mergedNoteData[currentKeyIndex][0];
 
                 //绘制按键
                 for (let k = 0; k < row; k++) {
                     for (let l = 0; l < col; l++) {
                         let keyX = x + keySpacingX * (l + 1);
-                        let keyY = y + keySpacingY * (row - k);
+                        // Cenc 修复绘画按下的按键出现上下颠倒 (row - k) -->> (k + 1)
+                        let keyY = y + keySpacingY * (k + 1);
                         if (currentKeys.includes(k * col + l)) {
                             //按下的按键
-                            paint.setARGB(192, 127, 255, 0);
+                            paint.setARGB(192, 176, 196, 222);
                         } else {
                             //未按下的按键, 灰色
                             paint.setARGB(192, 128, 128, 128);
@@ -109,7 +109,7 @@ function Visualizer(){
                     }
                 }
                 //绘制编号
-                paint.setARGB(128, 255, 255, 255);
+                paint.setARGB(64, 255, 255, 255);
                 paint.setTextSize(20);
                 canvas.drawText(i * boardCol + j + firstKeyIndex, x + 10, y + 30, paint);
             }
@@ -120,19 +120,19 @@ function Visualizer(){
      * 绘制背景
      * @param {android.graphics.Canvas} canvas 画布
      */
-    this.drawBackground = function(canvas){
+    this.drawBackground = function (canvas) {
         let paint = new Paint(); //android.graphics.Paint
         paint.setStyle(Paint.Style.FILL);
         //计算board的大小 //长方形
         let boardWidth = canvas.getWidth() / boardCol;
         let boardHeight = canvas.getHeight() / boardRow;
         let drawStep = Math.max(0, step);
- 
+
         //第一个board对应那一个按键
         let firstKeyIndex = Math.floor(drawStep / (boardRow * boardCol)) * boardRow * boardCol;
         //逐一绘制画面
-        for(let i = 0; i < boardRow; i++){
-            for(let j = 0; j < boardCol; j++){
+        for (let i = 0; i < boardRow; i++) {
+            for (let j = 0; j < boardCol; j++) {
                 //计算当前画面的位置
                 let x = j * boardWidth;
                 let y = i * boardHeight;
@@ -160,19 +160,19 @@ function Visualizer(){
         let Color = android.graphics.Color;
         let PorterDuff = android.graphics.PorterDuff;
         //创建bitmap
-        if(keysBitmap == null || keysBitmap.getWidth() != canvas.getWidth() || keysBitmap.getHeight() != canvas.getHeight()){
+        if (keysBitmap == null || keysBitmap.getWidth() != canvas.getWidth() || keysBitmap.getHeight() != canvas.getHeight()) {
             keysBitmap = android.graphics.Bitmap.createBitmap(canvas.getWidth(), canvas.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
             //强制重绘
             lastStep = -2;
-            console.log("create keysBitmap: " + keysBitmap.getWidth() + "x" + keysBitmap.getHeight());
+            // console.log("create keysBitmap: " + keysBitmap.getWidth() + "x" + keysBitmap.getHeight());
         }
-        if(backgroundBitmap == null || backgroundBitmap.getWidth() != canvas.getWidth() || backgroundBitmap.getHeight() != canvas.getHeight()){
+        if (backgroundBitmap == null || backgroundBitmap.getWidth() != canvas.getWidth() || backgroundBitmap.getHeight() != canvas.getHeight()) {
             backgroundBitmap = android.graphics.Bitmap.createBitmap(canvas.getWidth(), canvas.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
             //强制重绘
             lastFirstKeyIndex = -2;
-            console.log("create backgroundBitmap: " + backgroundBitmap.getWidth() + "x" + backgroundBitmap.getHeight());
+            // console.log("create backgroundBitmap: " + backgroundBitmap.getWidth() + "x" + backgroundBitmap.getHeight());
         }
-        
+
         if (lastStep != step) {
             //如果step变化了, 则重绘背景
             let backgroundCanvas = new Canvas(backgroundBitmap);
@@ -196,8 +196,4 @@ function Visualizer(){
         canvas.drawBitmap(keysBitmap, 0, 0, null);
     }
 }
-
-
-console.log("Visualizer.js loaded");
-
-module.exports = Visualizer;
+let visualizer = new Visualizer();

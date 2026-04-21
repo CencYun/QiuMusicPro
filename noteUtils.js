@@ -1,4 +1,3 @@
-
 /** @type {{subarray: (i: number, j: number) => any[]}} */
 Array.prototype;
 
@@ -205,7 +204,7 @@ function NoteUtils() {
             keys.forEach((key) => {
                 keyArray.push(key[0]);
                 attributes.push(key[2]);
-                if(key[2].lyric != undefined) {
+                if (key[2].lyric != undefined) {
                     attributes[0].lyric = key[2].lyric;
                     // console.verbose("lyric: " + JSON.stringify(attributes));
                     // key[2].lyric = undefined;
@@ -263,7 +262,7 @@ function NoteUtils() {
         // 检查 left-1 和 left 哪个更接近 timems
         if (Math.abs(noteData[left - 1][1] - timems) <= Math.abs(noteData[left][1] - timems)) {
             // left-1 更接近
-           left--;
+            left--;
         }
 
         while (left > 0 && Math.abs(noteData[left][1] - noteData[left - 1][1]) <= eps) {
@@ -291,4 +290,4 @@ function NoteUtils() {
     }
 }
 
-module.exports = new NoteUtils();
+let noteUtils = new NoteUtils();
