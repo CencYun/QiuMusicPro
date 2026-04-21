@@ -135,97 +135,101 @@ const FeatureFlags = {
 * @returns {Map<string, pos2dPair|undefined>} 音高到按键位置的映射
 */
 function generateLayout(config) {
-   if(config.semiToneWidth == undefined){
-       config.semiToneWidth = 0;
-   }
-   if(config.semiToneHeightOffset == undefined){
-       config.semiToneHeightOffset = 0.5;
-   }
-   if(config.transformMatrix == undefined){
-       config.transformMatrix = [
-           [1, 0, 0],
-           [0, 1, 0],
-           [0, 0, 1],
-       ];
-   }
-   if(config.centerAngle == undefined){
-       config.centerAngle = 0;
-   }
-   if(config.centerRadius == undefined){
-       config.centerRadius = 1;
-   }
-   let rowLengthOverride = new Map();
-   if(config.rowLengthOverride){
-       for(let i = 0; i < config.rowLengthOverride.length; i++){
-           rowLengthOverride[config.rowLengthOverride[i][0]] = config.rowLengthOverride[i][1];
-       }
-   }
-   console.log(rowLengthOverride);
+    if (config.semiToneWidth == undefined) {
+        config.semiToneWidth = 0;
+    }
+    if (config.semiToneHeightOffset == undefined) {
+        config.semiToneHeightOffset = 0.5;
+    }
+    if (config.transformMatrix == undefined) {
+        config.transformMatrix = [
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+        ];
+    }
+    if (config.centerAngle == undefined) {
+        config.centerAngle = 0;
+    }
+    if (config.centerRadius == undefined) {
+        config.centerRadius = 1;
+    }
+    let rowLengthOverride = new Map();
+    if (config.rowLengthOverride) {
+        for (let i = 0; i < config.rowLengthOverride.length; i++) {
+            // @Cenc 改
+            // rowLengthOverride[config.rowLengthOverride[i][0]] = config.rowLengthOverride[i][1];
+            rowLengthOverride.set(config.rowLengthOverride[i][0], config.rowLengthOverride[i][1]);
+        }
+    }
+    // console.log(rowLengthOverride);
 
-   let rows = [];
-   //1. 生成每一行的音高列表, 暂时不管按键位置
-   let usePitchRange = config.pitchRangeOrList.length == 2;
-   let pitchOrIndex = usePitchRange ? midiPitch.nameToMidiPitch(config.pitchRangeOrList[0]) : 0;
-   for (let i = 0; i < config.row; i++) {
-       let colLen = rowLengthOverride.get(i) ? rowLengthOverride.get(i) : config.column;
-       console.log(colLen);
-       let row = [];
-       for (let j = 0; j < colLen; j++) {
-           let curPitch = usePitchRange ? pitchOrIndex : midiPitch.nameToMidiPitch(config.pitchRangeOrList[pitchOrIndex]);
-           row.push([curPitch, [0,0]]);
-           if(usePitchRange){
-               //如果下一个音符是半音但不使用半音键, 则跳过
-               if(!config.haveSemitone && midiPitch.isHalf(curPitch + 1)){
-                   pitchOrIndex++;
-               }
-               pitchOrIndex++;
-           }else{
-               pitchOrIndex++;
-           }
-       }
-       rows.push(row);
-   }
+    let rows = [];
+    //1. 生成每一行的音高列表, 暂时不管按键位置
+    let usePitchRange = config.pitchRangeOrList.length == 2;
+    let pitchOrIndex = usePitchRange ? midiPitch.nameToMidiPitch(config.pitchRangeOrList[0]) : 0;
+    for (let i = 0; i < config.row; i++) {
+        // @Cenc 改
+        // let colLen = rowLengthOverride.get(i) ? rowLengthOverride.get(i) : config.column;
+        let colLen = rowLengthOverride.has(i) ? rowLengthOverride.get(i) : config.column;
+        // console.log(colLen);
+        let row = [];
+        for (let j = 0; j < colLen; j++) {
+            let curPitch = usePitchRange ? pitchOrIndex : midiPitch.nameToMidiPitch(config.pitchRangeOrList[pitchOrIndex]);
+            row.push([curPitch, [0, 0]]);
+            if (usePitchRange) {
+                //如果下一个音符是半音但不使用半音键, 则跳过
+                if (!config.haveSemitone && midiPitch.isHalf(curPitch + 1)) {
+                    pitchOrIndex++;
+                }
+                pitchOrIndex++;
+            } else {
+                pitchOrIndex++;
+            }
+        }
+        rows.push(row);
+    }
 
-   //2. 插入虚拟列
-   if(config.insertDummyKeys){
-       //从右往左插入
-       for(let i = 0; i < rows.length; i++){
-           let insertDummyColumns = config.insertDummyKeys.reduce((acc, cur) => {
-               if(cur[0] == i){
-                   //@ts-ignore
-                   acc.push(cur[1]);
-               }
-               return acc;
-           }, []).sort((a, b) => b - a);
-           for(let j = 0; j < insertDummyColumns.length; j++){
-               rows[i].splice(insertDummyColumns[j], 0, [-1, [0,0]]);
-           }
-       }
-   }
+    //2. 插入虚拟列
+    if (config.insertDummyKeys) {
+        //从右往左插入
+        for (let i = 0; i < rows.length; i++) {
+            let insertDummyColumns = config.insertDummyKeys.reduce((acc, cur) => {
+                if (cur[0] == i) {
+                    //@ts-ignore
+                    acc.push(cur[1]);
+                }
+                return acc;
+            }, []).sort((a, b) => b - a);
+            for (let j = 0; j < insertDummyColumns.length; j++) {
+                rows[i].splice(insertDummyColumns[j], 0, [-1, [0, 0]]);
+            }
+        }
+    }
 
-   //3. 生成基础的坐标
-   //假设每一行最左为x=0, 最右为1 / 每一列最下为y=1, 最上为0
-   
-   let rowDistance = config.row == 1 ? 1 : 1 / (config.row - 1);
-   let colDistance = config.column == 1 ? 1 : 1 / (config.column - 1);
+    //3. 生成基础的坐标
+    //假设每一行最左为x=0, 最右为1 / 每一列最下为y=1, 最上为0
 
-   for(let i = 0; i < rows.length; i++){
-       let curX = 0
-       for(let j = 0; j < rows[i].length; j++){
-           //需要考虑config.semiToneWidth
-           rows[i][j][1][0] = curX;
-           //查看当前或者下一个音符是否是半音, 如果是则需要调整位置
-           //@ts-ignore
-           if(midiPitch.isHalf(rows[i][j][0]) || (rows[i][j + 1] && midiPitch.isHalf(rows[i][j + 1][0]))){
-               curX += colDistance * (1 + config.semiToneWidth);
-           }else{
-               curX += colDistance * 2;
-           }
-           rows[i][j][1][1] = 1 - rowDistance * i;
-       }
+    let rowDistance = config.row == 1 ? 1 : 1 / (config.row - 1);
+    let colDistance = config.column == 1 ? 1 : 1 / (config.column - 1);
 
-   }
-   //归一化X坐标
+    for (let i = 0; i < rows.length; i++) {
+        let curX = 0
+        for (let j = 0; j < rows[i].length; j++) {
+            //需要考虑config.semiToneWidth
+            rows[i][j][1][0] = curX;
+            //查看当前或者下一个音符是否是半音, 如果是则需要调整位置
+            //@ts-ignore
+            if (midiPitch.isHalf(rows[i][j][0]) || (rows[i][j + 1] && midiPitch.isHalf(rows[i][j + 1][0]))) {
+                curX += colDistance * (1 + config.semiToneWidth);
+            } else {
+                curX += colDistance * 2;
+            }
+            rows[i][j][1][1] = 1 - rowDistance * i;
+        }
+
+    }
+    //归一化X坐标
     {
         let minX = rows.reduce((min, row) => Math.min(min, row.reduce((min, key) => Math.min(min, key[1][0]), 0)), 0);
         let maxX = rows.reduce((max, row) => Math.max(max, row.reduce((max, key) => Math.max(max, key[1][0]), 0)), 0);
@@ -235,35 +239,35 @@ function generateLayout(config) {
                 rows[i][j][1][0] = (rows[i][j][1][0] - minX) / width;
             }
         }
-    }   
-   //4. 居中对齐
-   for(let i = 0; i < rows.length; i++){
-       let row = rows[i];
-       let rowLen = row[row.length - 1][1][0] - row[0][1][0];
-       let centerX = rowLen / 2;
-        for(let j = 0; j < row.length; j++){
+    }
+    //4. 居中对齐
+    for (let i = 0; i < rows.length; i++) {
+        let row = rows[i];
+        let rowLen = row[row.length - 1][1][0] - row[0][1][0];
+        let centerX = rowLen / 2;
+        for (let j = 0; j < row.length; j++) {
             row[j][1][0] -= (centerX - 0.5);
         }
-   }
+    }
 
-   //5. 调整半音按键的y坐标
-   for(let i = 0; i < rows.length; i++){
-       for(let j = 0; j < rows[i].length; j++){
-           //@ts-ignore
-           if(midiPitch.isHalf(rows[i][j][0])){
-               rows[i][j][1][1] -= rowDistance * config.semiToneHeightOffset;
-           }
-       }
-   }
+    //5. 调整半音按键的y坐标
+    for (let i = 0; i < rows.length; i++) {
+        for (let j = 0; j < rows[i].length; j++) {
+            //@ts-ignore
+            if (midiPitch.isHalf(rows[i][j][0])) {
+                rows[i][j][1][1] -= rowDistance * config.semiToneHeightOffset;
+            }
+        }
+    }
 
-   //6. 应用变换矩阵
-   for(let i = 0; i < rows.length; i++){
-       for(let j = 0; j < rows[i].length; j++){
-           let pos = rows[i][j][1];
-           pos[0] = pos[0] * config.transformMatrix[0][0] + pos[1] * config.transformMatrix[0][1] + config.transformMatrix[0][2];
-           pos[1] = pos[0] * config.transformMatrix[1][0] + pos[1] * config.transformMatrix[1][1] + config.transformMatrix[1][2];
-       }
-   }
+    //6. 应用变换矩阵
+    for (let i = 0; i < rows.length; i++) {
+        for (let j = 0; j < rows[i].length; j++) {
+            let pos = rows[i][j][1];
+            pos[0] = pos[0] * config.transformMatrix[0][0] + pos[1] * config.transformMatrix[0][1] + config.transformMatrix[0][2];
+            pos[1] = pos[0] * config.transformMatrix[1][0] + pos[1] * config.transformMatrix[1][1] + config.transformMatrix[1][2];
+        }
+    }
 
     //7. 应用弧形变换
     if (config.centerAngle != 0) {
@@ -302,47 +306,47 @@ function generateLayout(config) {
             }
         }
         //左右反转. 不知道为什么需要
-        for(let i = 0; i < rows.length; i++){
+        for (let i = 0; i < rows.length; i++) {
             let poss = rows[i].map(key => key[1]);
             poss.reverse();
-            for(let j = 0; j < poss.length; j++){
+            for (let j = 0; j < poss.length; j++) {
                 rows[i][j][1] = poss[j];
             }
         }
     }
 
-   //8. 完全归一化
-   let minX = rows.reduce((min, row) => Math.min(min, row.reduce((min, key) => Math.min(min, key[1][0]), 0)), 0);
-   let maxX = rows.reduce((max, row) => Math.max(max, row.reduce((max, key) => Math.max(max, key[1][0]), 0)), 0);
-   let width = maxX - minX;
-   for(let i = 0; i < rows.length; i++){
-       for(let j = 0; j < rows[i].length; j++){
-           rows[i][j][1][0] = (rows[i][j][1][0] - minX) / width;
-       }
-   }
-   let minY = rows.reduce((min, row) => Math.min(min, row.reduce((min, key) => Math.min(min, key[1][1]), 0)), 0);
-   let maxY = rows.reduce((max, row) => Math.max(max, row.reduce((max, key) => Math.max(max, key[1][1]), 0)), 0);
-   let height = maxY - minY;
-   for(let i = 0; i < rows.length; i++){
-       for(let j = 0; j < rows[i].length; j++){
-           rows[i][j][1][1] = (rows[i][j][1][1] - minY) / height;
-       }
-   }
+    //8. 完全归一化
+    let minX = rows.reduce((min, row) => Math.min(min, row.reduce((min, key) => Math.min(min, key[1][0]), 0)), 0);
+    let maxX = rows.reduce((max, row) => Math.max(max, row.reduce((max, key) => Math.max(max, key[1][0]), 0)), 0);
+    let width = maxX - minX;
+    for (let i = 0; i < rows.length; i++) {
+        for (let j = 0; j < rows[i].length; j++) {
+            rows[i][j][1][0] = (rows[i][j][1][0] - minX) / width;
+        }
+    }
+    let minY = rows.reduce((min, row) => Math.min(min, row.reduce((min, key) => Math.min(min, key[1][1]), 0)), 0);
+    let maxY = rows.reduce((max, row) => Math.max(max, row.reduce((max, key) => Math.max(max, key[1][1]), 0)), 0);
+    let height = maxY - minY;
+    for (let i = 0; i < rows.length; i++) {
+        for (let j = 0; j < rows[i].length; j++) {
+            rows[i][j][1][1] = (rows[i][j][1][1] - minY) / height;
+        }
+    }
 
-   //9. 生成最终结果
-   let noteKeyMap = new Map();
-   for(let i = 0; i < rows.length; i++){
-       for(let j = 0; j < rows[i].length; j++){
-           if(rows[i][j][0] != -1){
-               //@ts-ignore
-               let pitchName = midiPitch.midiPitchToName(rows[i][j][0]);
-               noteKeyMap[pitchName] = rows[i][j][1];
-           }
-       }
-   }
+    //9. 生成最终结果
+    let noteKeyMap = new Map();
+    for (let i = 0; i < rows.length; i++) {
+        for (let j = 0; j < rows[i].length; j++) {
+            if (rows[i][j][0] != -1) {
+                //@ts-ignore
+                let pitchName = midiPitch.midiPitchToName(rows[i][j][0]);
+                noteKeyMap[pitchName] = rows[i][j][1];
+            }
+        }
+    }
 
-   //根据音高从低到高排序
-   return noteKeyMap;
+    //根据音高从低到高排序
+    return noteKeyMap;
 }
 
 /**
